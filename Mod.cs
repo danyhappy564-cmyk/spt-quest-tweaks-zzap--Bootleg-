@@ -54,6 +54,8 @@ public class Mod(
     private Config? _config;
     private readonly string _modDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
 
+    private Dictionary<string, string> localeOverrides = [];
+
     public Task OnLoad()
     {
         LoadConfig();
@@ -131,6 +133,97 @@ public class Mod(
                     }
                 }
             }
+        }
+
+        if (_config.CollectorPrerequisiteBackport)
+        {
+            List<QuestCondition> prerequisites = [];
+            var index = 0;
+
+            // Require max-level base-game traders
+            var maxTraders = new[] { Traders.PRAPOR, Traders.THERAPIST, Traders.SKIER, Traders.PEACEKEEPER, Traders.MECHANIC, Traders.RAGMAN, Traders.JAEGER };
+            foreach (var trader in maxTraders)
+            {
+                prerequisites.Add(new()
+                {
+                    Id = new MongoId(),
+                    Index = index++,
+                    ParentId = "",
+                    DynamicLocale = false,
+                    VisibilityConditions = [],
+                    GlobalQuestCounterId = "",
+                    ConditionType = "TraderLoyalty",
+                    Target = new(null, trader),
+                    CompareMethod = ">=",
+                    Value = 4,
+                });
+            }
+
+            // Require 3+ Fence rep
+            prerequisites.Add(new()
+            {
+                Id = new MongoId(),
+                Index = index++,
+                ParentId = "",
+                DynamicLocale = false,
+                VisibilityConditions = [],
+                GlobalQuestCounterId = "",
+                ConditionType = "TraderStanding",
+                Target = new(null, Traders.FENCE),
+                CompareMethod = ">=",
+                Value = 3
+            });
+
+            // Require player level 40
+            prerequisites.Add(new()
+            {
+                Id = new MongoId(),
+                Index = index++,
+                ParentId = "",
+                DynamicLocale = false,
+                VisibilityConditions = [],
+                GlobalQuestCounterId = "",
+                ConditionType = "Level",
+                CompareMethod = ">=",
+                Value = 40
+            });
+
+            // Require only a few quests
+            var requiredQuests = new[] { QuestTpl.A_SHOOTER_BORN_IN_HEAVEN, QuestTpl.THE_TARKOV_SHOOTER_PART_4, QuestTpl.SEW_IT_GOOD_PART_4 };
+            foreach (var quest in requiredQuests)
+            {
+                prerequisites.Add(new()
+                {
+                    Id = new MongoId(),
+                    Index = index++,
+                    ParentId = "",
+                    DynamicLocale = false,
+                    VisibilityConditions = [],
+                    GlobalQuestCounterId = "",
+                    ConditionType = "Quest",
+                    Target = new(null, quest),
+                    Status = [QuestStatusEnum.Success]
+                });
+            }
+            // Special-case Chemical Part 4 and alternate choices
+            var chemicalPart4Options = new[] { QuestTpl.CHEMICAL_PART_4, QuestTpl.OUT_OF_CURIOSITY, QuestTpl.BIG_CUSTOMER };
+            foreach (var quest in chemicalPart4Options)
+            {
+                prerequisites.Add(new()
+                {
+                    Id = new MongoId(),
+                    Index = index++,
+                    ParentId = "",
+                    DynamicLocale = false,
+                    VisibilityConditions = [],
+                    GlobalQuestCounterId = "",
+                    ConditionType = "Quest",
+                    Target = new(null, quest),
+                    Status = [QuestStatusEnum.Success, QuestStatusEnum.Fail]
+                });
+            }
+
+            quests[QuestTpl.COLLECTOR].Conditions.AvailableForStart = prerequisites;
         }
     }
 

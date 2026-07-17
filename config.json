@@ -27,5 +27,6 @@
     "onlyQuests": [],
 
     "lightkeeperOnlyRequireLevel": 0,
-    "tarkovShooterM10": false
+    "tarkovShooterM10": false,
+    "collectorPrerequisiteBackport": false
 }

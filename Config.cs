@@ -44,6 +44,9 @@ public record Config
 
     [JsonPropertyName("tarkovShooterM10")]
     public bool TarkovShooterM10 { get; set; }
+
+    [JsonPropertyName("collectorPrerequisiteBackport")]
+    public bool CollectorPrerequisiteBackport { get; set; }
 }
 
 public record ConditionsConfig

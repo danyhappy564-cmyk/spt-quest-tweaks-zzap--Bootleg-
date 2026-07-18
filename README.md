@@ -76,16 +76,16 @@ BSG only added it to 7 and 8, this option makes it work for 1-6 as well.
 This will completely replace the prerequisites, so is incompatible with other mods such as [Start Collector Early](https://forge.sp-tarkov.com/mod/1675/start-collector-early) but should be compatible with [Updated collector quest and streamer case](https://forge.sp-tarkov.com/mod/2615/updated-collector-quest-and-streamer-case-eft-10-backport).
 
 New prerequisites:
-Loyalty level 4👑 Prapor
-Loyalty level 4👑 Therapist
-Loyalty level 4👑 Skier
-Loyalty level 4👑 Peacekeeper
-Loyalty level 4👑 Mechanic
-Loyalty level 4👑 Ragman
-Loyalty level 4👑 Jaeger
-Fence reputation 3+
-PMC Level 40
-A Shooter Born in Heaven
-The Tarkov Shooter - Part 4
-Sew It Good - Part 4
-Chemical - Part 4 OR Big Customer OR Out of Curiosity
+- Loyalty level 4👑 Prapor
+- Loyalty level 4👑 Therapist
+- Loyalty level 4👑 Skier
+- Loyalty level 4👑 Peacekeeper
+- Loyalty level 4👑 Mechanic
+- Loyalty level 4👑 Ragman
+- Loyalty level 4👑 Jaeger
+- Fence reputation 3+
+- PMC Level 40
+- A Shooter Born in Heaven
+- The Tarkov Shooter - Part 4
+- Sew It Good - Part 4
+- Chemical - Part 4 OR Big Customer OR Out of Curiosity

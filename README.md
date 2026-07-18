@@ -43,8 +43,15 @@ Any marked with 🔃 also will also apply to repeatable quests by default.
 
 An additional setting toggles whether these also apply to repeatable quests.
 
-The `exemptQuests` setting lets you specify a list of quests conditions will *not* be removed from. This should be a list of quest IDs, which can be found using [Tarkynator](https://tarkynator.com/quests?scope=global). For example, the ID of the dehydration quest "The Survivalist Path - Zhivchik" is `5d25bfd086f77442734d3007`. This can be added to the list like `["5d25bfd086f77442734d3007"]`. To add multiple quests, add a comma between ids like `["...", "..."]`.
+Each of these options can be overridden for individual quests using the `questOverrides` setting.
+It should be in the format `{"questId": {"option": true, "otherOption": false}}`, using the option names in `removeConditions` for reference. These will always be handled regardless of `onlyQuests` and `exemptQuests`.
+As an example, to backport the expansion of [Forester's Duty](https://escapefromtarkov.fandom.com/wiki/Forester%27s_Duty), you could set `{"66ab9da7eb102b9bcd08591c": {"zone": true}}` and this would leave other zones like Capturing Outposts intact.
+The `onlyQuests` setting lets you specify an exclusive list of quests that will be modified.
+The `exemptQuests` setting lets you specify a list of quests that will be skipped entirely.
+
+Quest IDs for these settings can be found using [Tarkynator](https://tarkynator.com/quests?scope=global). For example, the ID of the dehydration quest "The Survivalist Path - Zhivchik" is `5d25bfd086f77442734d3007`. This can be added to lists like `["5d25bfd086f77442734d3007"]`. To add multiple quests, add a comma between IDs like `["...", "..."]`.
 Modded quests can also be added. Their quest IDs can be found in some file in their own mod folder in `user/mods` or, if they use VCQL, `user/mods/Virtual's Custom Quest Loader/database/locales/en/THAT_MOD.json`.
+To set overrides for repeatable quests use `615ffc701c97c768137e719b` for PMC dailies, `618035d38012292db3081bf0` for weeklies, and `62825ef60e88d037dc1eb426` for scav dailies.
 
 ### Set Number For Eliminations and Items to Hand Over
 

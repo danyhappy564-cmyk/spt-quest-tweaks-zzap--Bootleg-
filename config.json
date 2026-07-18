@@ -25,6 +25,7 @@
     "affectRepeatables": true,
     "exemptQuests": [],
     "onlyQuests": [],
+    "questOverrides": {},
 
     "lightkeeperOnlyRequireLevel": 0,
     "tarkovShooterM10": false,

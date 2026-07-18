@@ -39,6 +39,9 @@ public record Config
     [JsonPropertyName("onlyQuests")]
     public required HashSet<MongoId> OnlyQuests { get; set; }
 
+    [JsonPropertyName("questOverrides")]
+    public required Dictionary<MongoId, ConditionsConfig> QuestOverrides { get; set; }
+
     [JsonPropertyName("lightkeeperOnlyRequireLevel")]
     public int LightkeeperOnlyRequireLevel { get; set; }
 
@@ -52,58 +55,58 @@ public record Config
 public record ConditionsConfig
 {
     [JsonPropertyName("target")]
-    public bool Target { get; set; }
+    public bool? Target { get; set; }
 
     [JsonPropertyName("weapon")]
-    public bool Weapon { get; set; }
+    public bool? Weapon { get; set; }
 
     [JsonPropertyName("weaponMods")]
-    public bool WeaponMods { get; set; }
+    public bool? WeaponMods { get; set; }
 
     [JsonPropertyName("selfGear")]
-    public bool SelfGear { get; set; }
+    public bool? SelfGear { get; set; }
 
     [JsonPropertyName("enemyGear")]
-    public bool EnemyGear { get; set; }
+    public bool? EnemyGear { get; set; }
 
     [JsonPropertyName("selfHealthEffect")]
-    public bool SelfHealthEffect { get; set; }
+    public bool? SelfHealthEffect { get; set; }
 
     [JsonPropertyName("enemyHealthEffect")]
-    public bool EnemyHealthEffect { get; set; }
+    public bool? EnemyHealthEffect { get; set; }
 
     [JsonPropertyName("bodyPart")]
-    public bool BodyPart { get; set; }
+    public bool? BodyPart { get; set; }
 
     [JsonPropertyName("distance")]
-    public bool Distance { get; set; }
+    public bool? Distance { get; set; }
 
     [JsonPropertyName("time")]
-    public bool Time { get; set; }
+    public bool? Time { get; set; }
 
     [JsonPropertyName("map")]
-    public bool Map { get; set; }
+    public bool? Map { get; set; }
 
     [JsonPropertyName("zone")]
-    public bool Zone { get; set; }
+    public bool? Zone { get; set; }
 
     [JsonPropertyName("findInRaid")]
-    public bool FindInRaid { get; set; }
+    public bool? FindInRaid { get; set; }
 
     public bool AnyEnabled
     {
-        get => Target
-               || Weapon
-               || WeaponMods
-               || SelfGear
-               || EnemyGear
-               || SelfHealthEffect
-               || EnemyHealthEffect
-               || BodyPart
-               || Distance
-               || Time
-               || Map
-               || Zone
-               || FindInRaid;
+        get => (Target ?? false)
+               || (Weapon ?? false)
+               || (WeaponMods ?? false)
+               || (SelfGear ?? false)
+               || (EnemyGear ?? false)
+               || (SelfHealthEffect ?? false)
+               || (EnemyHealthEffect ?? false)
+               || (BodyPart ?? false)
+               || (Distance ?? false)
+               || (Time ?? false)
+               || (Map ?? false)
+               || (Zone ?? false)
+               || (FindInRaid ?? false);
     }
 }

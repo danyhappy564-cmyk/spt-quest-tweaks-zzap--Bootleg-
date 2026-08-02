@@ -17,8 +17,8 @@ public record Config
     [JsonPropertyName("QualityOfLife")]
     public required QualityOfLifeConfig QualityOfLife { get; set; }
 
-    [JsonPropertyName("Conditions")]
-    public required ConditionsConfig Conditions { get; set; }
+    [JsonPropertyName("GlobalConditions")]
+    public required GlobalConditionsConfig GlobalConditions { get; set; }
 
     [JsonPropertyName("SpecialCases")]
     public required SpecialCasesConfig SpecialCases { get; set; }
@@ -30,7 +30,7 @@ public record Config
     public required HashSet<MongoId> OnlyQuests { get; set; }
 
     [JsonPropertyName("questOverrides")]
-    public required Dictionary<MongoId, ConfigConditions> QuestOverrides { get; set; }
+    public required Dictionary<MongoId, ConditionsConfig> QuestOverrides { get; set; }
 }
 
 public record QualityOfLifeConfig
@@ -47,21 +47,82 @@ public record QualityOfLifeConfig
 
 public record ConditionsConfig
 {
-    [JsonPropertyName("removeConditions")]
-    public required ConfigConditions RemoveConditions { get; set; }
+    [JsonPropertyName("removeTarget")]
+    public bool? RemoveTarget { get; set; }
+
+    [JsonPropertyName("removeWeapon")]
+    public bool? RemoveWeapon { get; set; }
+
+    [JsonPropertyName("removeWeaponMods")]
+    public bool? RemoveWeaponMods { get; set; }
+
+    [JsonPropertyName("removeSelfGear")]
+    public bool? RemoveSelfGear { get; set; }
+
+    [JsonPropertyName("removeEnemyGear")]
+    public bool? RemoveEnemyGear { get; set; }
+
+    [JsonPropertyName("removeSelfHealthEffect")]
+    public bool? RemoveSelfHealthEffect { get; set; }
+
+    [JsonPropertyName("removeEnemyHealthEffect")]
+    public bool? RemoveEnemyHealthEffect { get; set; }
+
+    [JsonPropertyName("removeBodyPart")]
+    public bool? RemoveBodyPart { get; set; }
+
+    [JsonPropertyName("removeDistance")]
+    public bool? RemoveDistance { get; set; }
+
+    [JsonPropertyName("removeTime")]
+    public bool? RemoveTime { get; set; }
+
+    [JsonPropertyName("removeMap")]
+    public bool? RemoveMap { get; set; }
+
+    [JsonPropertyName("removeZone")]
+    public bool? RemoveZone { get; set; }
+
+    [JsonPropertyName("removeFindInRaid")]
+    public bool? RemoveFindInRaid { get; set; }
 
     [JsonPropertyName("handoverItemCount")]
-    public int HandoverItemCount { get; set; }
+    public int? HandoverItemCount { get; set; }
 
     [JsonPropertyName("handoverItemPercent")]
-    public int HandoverItemPercent { get; set; }
+    public int? HandoverItemPercent { get; set; }
 
     [JsonPropertyName("eliminationCount")]
-    public int EliminationCount { get; set; }
+    public int? EliminationCount { get; set; }
 
     [JsonPropertyName("eliminationPercent")]
-    public int EliminationPercent { get; set; }
+    public int? EliminationPercent { get; set; }
 
+    [JsonIgnore]
+    public bool AnyChanged
+    {
+        get => (RemoveTarget ?? false)
+               || (RemoveWeapon ?? false)
+               || (RemoveWeaponMods ?? false)
+               || (RemoveSelfGear ?? false)
+               || (RemoveEnemyGear ?? false)
+               || (RemoveSelfHealthEffect ?? false)
+               || (RemoveEnemyHealthEffect ?? false)
+               || (RemoveBodyPart ?? false)
+               || (RemoveDistance ?? false)
+               || (RemoveTime ?? false)
+               || (RemoveMap ?? false)
+               || (RemoveZone ?? false)
+               || (RemoveFindInRaid ?? false)
+               || (HandoverItemCount >= 0)
+               || (HandoverItemPercent >= 0)
+               || (EliminationCount >= 0)
+               || (EliminationPercent >= 0);
+    }
+}
+
+public record GlobalConditionsConfig : ConditionsConfig
+{
     [JsonPropertyName("affectRepeatables")]
     public bool AffectRepeatables { get; set; }
 }
@@ -76,66 +137,6 @@ public record SpecialCasesConfig
 
     [JsonPropertyName("collectorPrerequisiteBackport")]
     public bool CollectorPrerequisiteBackport { get; set; }
-}
-
-public record ConfigConditions
-{
-    [JsonPropertyName("target")]
-    public bool? Target { get; set; }
-
-    [JsonPropertyName("weapon")]
-    public bool? Weapon { get; set; }
-
-    [JsonPropertyName("weaponMods")]
-    public bool? WeaponMods { get; set; }
-
-    [JsonPropertyName("selfGear")]
-    public bool? SelfGear { get; set; }
-
-    [JsonPropertyName("enemyGear")]
-    public bool? EnemyGear { get; set; }
-
-    [JsonPropertyName("selfHealthEffect")]
-    public bool? SelfHealthEffect { get; set; }
-
-    [JsonPropertyName("enemyHealthEffect")]
-    public bool? EnemyHealthEffect { get; set; }
-
-    [JsonPropertyName("bodyPart")]
-    public bool? BodyPart { get; set; }
-
-    [JsonPropertyName("distance")]
-    public bool? Distance { get; set; }
-
-    [JsonPropertyName("time")]
-    public bool? Time { get; set; }
-
-    [JsonPropertyName("map")]
-    public bool? Map { get; set; }
-
-    [JsonPropertyName("zone")]
-    public bool? Zone { get; set; }
-
-    [JsonPropertyName("findInRaid")]
-    public bool? FindInRaid { get; set; }
-
-    [JsonIgnore]
-    public bool AnyEnabled
-    {
-        get => (Target ?? false)
-               || (Weapon ?? false)
-               || (WeaponMods ?? false)
-               || (SelfGear ?? false)
-               || (EnemyGear ?? false)
-               || (SelfHealthEffect ?? false)
-               || (EnemyHealthEffect ?? false)
-               || (BodyPart ?? false)
-               || (Distance ?? false)
-               || (Time ?? false)
-               || (Map ?? false)
-               || (Zone ?? false)
-               || (FindInRaid ?? false);
-    }
 }
 
 public class ConfigRegistration : IOnDIConstruct

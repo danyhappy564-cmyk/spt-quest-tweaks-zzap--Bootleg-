@@ -257,13 +257,8 @@ public class Mod(
 
     private void ModifyQuestConditions(Dictionary<MongoId, Quest> quests)
     {
-        var remove = config.Conditions.RemoveConditions;
-        var shouldModifyConditions = remove.AnyEnabled
-                                     || (config.QuestOverrides.Count > 0)
-                                     || config.Conditions.HandoverItemPercent >= 0
-                                     || config.Conditions.EliminationPercent >= 0
-                                     || config.Conditions.HandoverItemCount >= 0
-                                     || config.Conditions.EliminationCount >= 0;
+        var shouldModifyConditions = config.GlobalConditions.AnyChanged
+                                     || (config.QuestOverrides.Count > 0);
         if (!shouldModifyConditions)
         {
             return;
@@ -311,7 +306,7 @@ public class Mod(
             {
                 if (objective.ConditionType == "HandoverItem" || objective.ConditionType == "FindItem")
                 {
-                    if (ShouldModifyCondition(questId, "FindInRaid"))
+                    if (ShouldModifyCondition(questId, "RemoveFindInRaid"))
                     {
                         objective.OnlyFoundInRaid = false;
                     }
@@ -331,7 +326,7 @@ public class Mod(
                         && !Constants.KeyClasses.Contains(item.Parent)
                         && !Constants.HandoverCountItemBlacklist.Contains(item.Id))
                     {
-                        objective.Value = GetNewObjectiveValue(objective.Value, config.Conditions.HandoverItemCount, config.Conditions.HandoverItemPercent);
+                        objective.Value = GetNewObjectiveValue(questId, "HandoverItem", objective.Value);
                     }
                 }
 
@@ -340,7 +335,7 @@ public class Mod(
                     continue;
                 }
 
-                if (ShouldModifyCondition(questId, "Zone") && !ShouldModifyCondition(questId, "Map"))
+                if (ShouldModifyCondition(questId, "RemoveZone") && !ShouldModifyCondition(questId, "RemoveMap"))
                 {
                     var zoneCond = objective.Counter!.Conditions!.Find(
                         cond => cond.ConditionType == "InZone");
@@ -371,10 +366,10 @@ public class Mod(
                 }
 
                 objective.Counter!.Conditions!.RemoveAll(cond =>
-                    (ShouldModifyCondition(questId, "SelfHealthEffect") && cond.ConditionType == "HealthEffect")
-                    || (ShouldModifyCondition(questId, "SelfGear") && cond.ConditionType == "Equipment")
-                    || (ShouldModifyCondition(questId, "Map") && cond.ConditionType == "Location")
-                    || (ShouldModifyCondition(questId, "Zone") && cond.ConditionType == "InZone")
+                    (ShouldModifyCondition(questId, "RemoveSelfHealthEffect") && (cond.ConditionType == "HealthEffect"))
+                    || (ShouldModifyCondition(questId, "RemoveSelfGear") && (cond.ConditionType == "Equipment"))
+                    || (ShouldModifyCondition(questId, "RemoveMap") && (cond.ConditionType == "Location"))
+                    || (ShouldModifyCondition(questId, "RemoveZone") && (cond.ConditionType == "InZone"))
                 );
 
                 // auto-complete counters that no longer have an "action" condition
@@ -394,47 +389,47 @@ public class Mod(
                         continue;
                     }
 
-                    if ((config.Conditions.EliminationCount >= 0 || config.Conditions.EliminationPercent >= 0)
+                    if ((config.GlobalConditions.EliminationCount >= 0 || config.GlobalConditions.EliminationPercent >= 0)
                         && condition.ConditionType == "Kills")
                     {
-                        objective.Value = GetNewObjectiveValue(objective.Value, config.Conditions.EliminationCount, config.Conditions.EliminationPercent);
+                        objective.Value = GetNewObjectiveValue(questId, "Elimination", objective.Value);
                     }
 
-                    if (ShouldModifyCondition(questId, "Target"))
+                    if (ShouldModifyCondition(questId, "RemoveTarget"))
                     {
                         condition.SavageRole?.Clear();
                         condition.Target = new ListOrT<string>(null, "Any");
                     }
 
-                    if (ShouldModifyCondition(questId, "Weapon"))
+                    if (ShouldModifyCondition(questId, "RemoveWeapon"))
                     {
                         condition.Weapon?.Clear();
                         condition.WeaponCaliber?.Clear();
                     }
 
-                    if (ShouldModifyCondition(questId, "WeaponMods"))
+                    if (ShouldModifyCondition(questId, "RemoveWeaponMods"))
                     {
                         condition.WeaponModsExclusive = [];
                         condition.WeaponModsInclusive = [];
                     }
 
-                    if (ShouldModifyCondition(questId, "EnemyHealthEffect"))
+                    if (ShouldModifyCondition(questId, "RemoveEnemyHealthEffect"))
                     {
                         condition.EnemyHealthEffects?.Clear();
                     }
 
-                    if (ShouldModifyCondition(questId, "EnemyGear"))
+                    if (ShouldModifyCondition(questId, "RemoveEnemyGear"))
                     {
                         condition.EnemyEquipmentExclusive = [];
                         condition.EnemyEquipmentInclusive = [];
                     }
 
-                    if (ShouldModifyCondition(questId, "BodyPart"))
+                    if (ShouldModifyCondition(questId, "RemoveBodyPart"))
                     {
                         condition.BodyPart?.Clear();
                     }
 
-                    if (ShouldModifyCondition(questId, "Distance"))
+                    if (ShouldModifyCondition(questId, "RemoveDistance"))
                     {
                         condition.Distance = new CounterConditionDistance
                         {
@@ -443,7 +438,7 @@ public class Mod(
                         };
                     }
 
-                    if (ShouldModifyCondition(questId, "Time") && (condition.Daytime is not null))
+                    if (ShouldModifyCondition(questId, "RemoveTime") && (condition.Daytime is not null))
                     {
                         condition.Daytime = new DaytimeCounter
                         {
@@ -455,7 +450,7 @@ public class Mod(
             }
         }
 
-        if (!config.Conditions.AffectRepeatables)
+        if (!config.GlobalConditions.AffectRepeatables)
         {
             return;
         }
@@ -463,7 +458,7 @@ public class Mod(
         foreach (var quest in questConfig.RepeatableQuests)
         {
             var questId = quest.Id;
-            if (ShouldModifyCondition(questId, "FindInRaid"))
+            if (ShouldModifyCondition(questId, "RemoveFindInRaid"))
             {
                 foreach (var completion in quest.QuestConfig.CompletionConfig)
                 {
@@ -479,7 +474,7 @@ public class Mod(
 
             foreach (var elim in elims)
             {
-                if (ShouldModifyCondition(questId, "Target"))
+                if (ShouldModifyCondition(questId, "RemoveTarget"))
                 {
                     elim.Targets = [new ProbabilityObject<string, BossInfo> {
                         Key = "Any",
@@ -491,18 +486,18 @@ public class Mod(
                     }];
                 }
 
-                if (ShouldModifyCondition(questId, "Weapon"))
+                if (ShouldModifyCondition(questId, "RemoveWeapon"))
                 {
                     elim.WeaponCategoryRequirementChance = 0;
                     elim.WeaponRequirementChance = 0;
                 }
 
-                if (ShouldModifyCondition(questId, "BodyPart"))
+                if (ShouldModifyCondition(questId, "RemoveBodyPart"))
                 {
                     elim.BodyPartChance = 0;
                 }
 
-                if (ShouldModifyCondition(questId, "Distance"))
+                if (ShouldModifyCondition(questId, "RemoveDistance"))
                 {
                     elim.DistanceProbability = 0;
                 }
@@ -510,21 +505,66 @@ public class Mod(
         }
     }
 
-    private static double? GetNewObjectiveValue(double? original, int absolute, int percent)
+    private double? GetNewObjectiveValue(MongoId questId, string condition, double? original)
     {
         if (original is null)
         {
             return null;
         }
 
+        var absoluteProp = typeof(ConditionsConfig).GetProperty($"{condition}Count")!;
+        var percentProp = typeof(ConditionsConfig).GetProperty($"{condition}Percent")!;
+
+        int? absolute;
+        int? percent;
+
+        ConditionsConfig? questOverride;
+        if (config.QuestOverrides.TryGetValue(questId, out questOverride))
+        {
+            absolute = absoluteProp.GetValue(questOverride) as int?;
+            if (absolute < 0)
+            {
+                return original;
+            }
+            else if (absolute >= 0)
+            {
+                return absolute;
+            }
+
+            percent = percentProp.GetValue(questOverride) as int?;
+            if (percent < 0)
+            {
+                return original;
+            }
+            else if (percent >= 0)
+            {
+                var value = Double.Round((original.Value * percent / 100).Value);
+                if (value == 0)
+                {
+                    return 1;
+                }
+                else
+                {
+                    return value;
+                }
+            }
+        }
+
+        if (IsQuestExempt(questId))
+        {
+            return original;
+        }
+
+        absolute = absoluteProp.GetValue(config.GlobalConditions) as int?;
         if (absolute >= 0)
         {
             return absolute;
         }
 
+        percent = percentProp.GetValue(config.GlobalConditions) as int?;
         if (percent >= 0)
         {
-            var value = Double.Round(original.Value * percent / 100);
+            var value = Double.Round((original.Value * percent / 100).Value);
             if (value == 0)
             {
                 return 1;
@@ -540,26 +580,36 @@ public class Mod(
 
     private bool ShouldModifyCondition(MongoId questId, string condition)
     {
-        var prop = typeof(ConfigConditions).GetProperty(condition)!;
+        var prop = typeof(ConditionsConfig).GetProperty(condition)!;
 
-        ConfigConditions? questOverride;
-        if (config!.QuestOverrides.TryGetValue(questId, out questOverride))
+        ConditionsConfig? questOverride;
+        if (config.QuestOverrides.TryGetValue(questId, out questOverride))
         {
-            var shouldModify = prop.GetValue(questOverride) as bool?;
-            if (shouldModify is not null)
+            var overrideValue = prop.GetValue(questOverride) as bool?;
+            if (overrideValue is not null)
             {
-                return shouldModify.Value;
+                return overrideValue.Value;
             }
         }
 
-        if ((config.OnlyQuests.Count > 0) && !config.OnlyQuests.Contains(questId))
+        if (IsQuestExempt(questId))
         {
             return false;
+        }
+
+        return (prop.GetValue(config.GlobalConditions) as bool?) ?? false;
+    }
+
+    private bool IsQuestExempt(MongoId questId)
+    {
+        if ((config.OnlyQuests.Count > 0) && !config.OnlyQuests.Contains(questId))
+        {
+            return true;
         }
         if (config.ExemptQuests.Contains(questId))
         {
-            return false;
+            return true;
         }
-        return (prop.GetValue(config.Conditions.RemoveConditions) as bool?) ?? false;
+        return false;
     }
 }

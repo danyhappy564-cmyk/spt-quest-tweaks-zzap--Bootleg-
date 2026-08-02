@@ -42,12 +42,14 @@ public record LocationInfo(string Name, string Id, string MongoId);
 
 [Injectable(TypePriority = OnLoadOrder.PostLoad + 999)]
 public class Mod(
+#if DEBUG
+    JsonUtil json,
+#endif
     Config config,
     QuestConfig questConfig,
     TemplateTable templates,
     LocaleTable locales,
-    LocationTable locationsTable,
-    JsonUtil json
+    LocationTable locationsTable
 ) : IOnLoad
 {
     private readonly string _modDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
@@ -72,7 +74,7 @@ public class Mod(
 
     private void ModifySpecialCaseQuests(Dictionary<MongoId, Quest> quests)
     {
-        if (config.LightkeeperOnlyRequireLevel > 0)
+        if (config.SpecialCases.LightkeeperOnlyRequireLevel > 0)
         {
             var conditions = quests[QuestTpl.NETWORK_PROVIDER_PART_1].Conditions.AvailableForStart!;
             var reuseId = conditions[0].Id;
@@ -82,7 +84,7 @@ public class Mod(
                 Id = reuseId,
                 ConditionType = "Level",
                 CompareMethod = ">=",
-                Value = config.LightkeeperOnlyRequireLevel,
+                Value = config.SpecialCases.LightkeeperOnlyRequireLevel,
                 DynamicLocale = false,
                 // Index = 0,
                 // GlobalQuestCounterId = "",
@@ -91,7 +93,7 @@ public class Mod(
             });
         }
 
-        if (config.TarkovShooterM10)
+        if (config.SpecialCases.TarkovShooterM10)
         {
             foreach (var questId in Constants.TarkovShooter)
             {
@@ -116,7 +118,7 @@ public class Mod(
             }
         }
 
-        if (config.CollectorPrerequisiteBackport)
+        if (config.SpecialCases.CollectorPrerequisiteBackport)
         {
             List<QuestCondition> prerequisites = [];
             var index = 0;
@@ -210,9 +212,9 @@ public class Mod(
 
     private void ModifyQuestsNonExemptSettings(Dictionary<MongoId, Quest> quests)
     {
-        if (!(config!.RevealAllQuestObjectives
-              || config.RevealUnknownRewards
-              || config.RemoveTimeGates))
+        if (!(config.QualityOfLife.RevealAllQuestObjectives
+              || config.QualityOfLife.RevealUnknownRewards
+              || config.QualityOfLife.RemoveTimeGates))
         {
             return;
         }
@@ -221,7 +223,7 @@ public class Mod(
         {
             var objectives = quest.Conditions.AvailableForFinish!;
 
-            if (config.RevealAllQuestObjectives)
+            if (config.QualityOfLife.RevealAllQuestObjectives)
             {
                 foreach (var objective in objectives)
                 {
@@ -229,7 +231,7 @@ public class Mod(
                 }
             }
 
-            if (config.RevealUnknownRewards)
+            if (config.QualityOfLife.RevealUnknownRewards)
             {
                 if (quest.Rewards is not null)
                 {
@@ -240,7 +242,7 @@ public class Mod(
                 }
             }
 
-            if (config.RemoveTimeGates)
+            if (config.QualityOfLife.RemoveTimeGates)
             {
                 foreach (var prereq in quest.Conditions.AvailableForStart!)
                 {
@@ -255,13 +257,13 @@ public class Mod(
 
     private void ModifyQuestConditions(Dictionary<MongoId, Quest> quests)
     {
-        var remove = config!.RemoveConditions;
+        var remove = config.Conditions.RemoveConditions;
         var shouldModifyConditions = remove.AnyEnabled
                                      || (config.QuestOverrides.Count > 0)
-                                     || config.HandoverItemPercent >= 0
-                                     || config.EliminationPercent >= 0
-                                     || config.HandoverItemCount >= 0
-                                     || config.EliminationCount >= 0;
+                                     || config.Conditions.HandoverItemPercent >= 0
+                                     || config.Conditions.EliminationPercent >= 0
+                                     || config.Conditions.HandoverItemCount >= 0
+                                     || config.Conditions.EliminationCount >= 0;
         if (!shouldModifyConditions)
         {
             return;
@@ -329,7 +331,7 @@ public class Mod(
                         && !Constants.KeyClasses.Contains(item.Parent)
                         && !Constants.HandoverCountItemBlacklist.Contains(item.Id))
                     {
-                        objective.Value = GetNewObjectiveValue(objective.Value, config.HandoverItemCount, config.HandoverItemPercent);
+                        objective.Value = GetNewObjectiveValue(objective.Value, config.Conditions.HandoverItemCount, config.Conditions.HandoverItemPercent);
                     }
                 }
 
@@ -392,10 +394,10 @@ public class Mod(
                         continue;
                     }
 
-                    if ((config.EliminationCount >= 0 || config.EliminationPercent >= 0)
+                    if ((config.Conditions.EliminationCount >= 0 || config.Conditions.EliminationPercent >= 0)
                         && condition.ConditionType == "Kills")
                     {
-                        objective.Value = GetNewObjectiveValue(objective.Value, config.EliminationCount, config.EliminationPercent);
+                        objective.Value = GetNewObjectiveValue(objective.Value, config.Conditions.EliminationCount, config.Conditions.EliminationPercent);
                     }
 
                     if (ShouldModifyCondition(questId, "Target"))
@@ -453,7 +455,7 @@ public class Mod(
             }
         }
 
-        if (!config.AffectRepeatables)
+        if (!config.Conditions.AffectRepeatables)
         {
             return;
         }
@@ -470,7 +472,6 @@ public class Mod(
             }
 
             var elims = quest.QuestConfig.Elimination;
-            // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
             if (elims is null)
             {
                 continue;
@@ -539,9 +540,9 @@ public class Mod(
 
     private bool ShouldModifyCondition(MongoId questId, string condition)
     {
-        var prop = typeof(ConditionsConfig).GetProperty(condition)!;
+        var prop = typeof(ConfigConditions).GetProperty(condition)!;
 
-        ConditionsConfig? questOverride;
+        ConfigConditions? questOverride;
         if (config!.QuestOverrides.TryGetValue(questId, out questOverride))
         {
             var shouldModify = prop.GetValue(questOverride) as bool?;
@@ -559,6 +560,6 @@ public class Mod(
         {
             return false;
         }
-        return (prop.GetValue(config.RemoveConditions) as bool?) ?? false;
+        return (prop.GetValue(config.Conditions.RemoveConditions) as bool?) ?? false;
     }
 }

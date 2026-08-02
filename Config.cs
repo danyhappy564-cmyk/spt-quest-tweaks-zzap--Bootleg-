@@ -14,6 +14,27 @@ namespace sgtlaggyQuestTweaks;
 
 public record Config
 {
+    [JsonPropertyName("QualityOfLife")]
+    public required QualityOfLifeConfig QualityOfLife { get; set; }
+
+    [JsonPropertyName("Conditions")]
+    public required ConditionsConfig Conditions { get; set; }
+
+    [JsonPropertyName("SpecialCases")]
+    public required SpecialCasesConfig SpecialCases { get; set; }
+
+    [JsonPropertyName("exemptQuests")]
+    public required HashSet<MongoId> ExemptQuests { get; set; }
+
+    [JsonPropertyName("onlyQuests")]
+    public required HashSet<MongoId> OnlyQuests { get; set; }
+
+    [JsonPropertyName("questOverrides")]
+    public required Dictionary<MongoId, ConfigConditions> QuestOverrides { get; set; }
+}
+
+public record QualityOfLifeConfig
+{
     [JsonPropertyName("revealAllQuestObjectives")]
     public bool RevealAllQuestObjectives { get; set; }
 
@@ -22,9 +43,12 @@ public record Config
 
     [JsonPropertyName("removeTimeGates")]
     public bool RemoveTimeGates { get; set; }
+}
 
+public record ConditionsConfig
+{
     [JsonPropertyName("removeConditions")]
-    public required ConditionsConfig RemoveConditions { get; set; }
+    public required ConfigConditions RemoveConditions { get; set; }
 
     [JsonPropertyName("handoverItemCount")]
     public int HandoverItemCount { get; set; }
@@ -40,16 +64,10 @@ public record Config
 
     [JsonPropertyName("affectRepeatables")]
     public bool AffectRepeatables { get; set; }
+}
 
-    [JsonPropertyName("exemptQuests")]
-    public required HashSet<MongoId> ExemptQuests { get; set; }
-
-    [JsonPropertyName("onlyQuests")]
-    public required HashSet<MongoId> OnlyQuests { get; set; }
-
-    [JsonPropertyName("questOverrides")]
-    public required Dictionary<MongoId, ConditionsConfig> QuestOverrides { get; set; }
-
+public record SpecialCasesConfig
+{
     [JsonPropertyName("lightkeeperOnlyRequireLevel")]
     public int LightkeeperOnlyRequireLevel { get; set; }
 
@@ -60,7 +78,7 @@ public record Config
     public bool CollectorPrerequisiteBackport { get; set; }
 }
 
-public record ConditionsConfig
+public record ConfigConditions
 {
     [JsonPropertyName("target")]
     public bool? Target { get; set; }
@@ -101,6 +119,7 @@ public record ConditionsConfig
     [JsonPropertyName("findInRaid")]
     public bool? FindInRaid { get; set; }
 
+    [JsonIgnore]
     public bool AnyEnabled
     {
         get => (Target ?? false)

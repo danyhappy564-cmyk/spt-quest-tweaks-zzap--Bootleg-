@@ -1,33 +1,37 @@
 {
-    "revealAllQuestObjectives": false,
-    "revealUnknownRewards": false,
-    "removeTimeGates": false,
-
-    "removeConditions": {
-        "target": false,
-        "weapon": false,
-        "weaponMods": false,
-        "selfGear": false,
-        "enemyGear": false,
-        "selfHealthEffect": false,
-        "enemyHealthEffect": false,
-        "bodyPart": false,
-        "distance": false,
-        "time": false,
-        "map": false,
-        "zone": false,
-        "findInRaid": false
+    "QualityOfLife": {
+        "revealAllQuestObjectives": false,
+        "revealUnknownRewards": false,
+        "removeTimeGates": false
     },
-    "handoverItemCount": -1,
-    "handoverItemPercent": -1,
-    "eliminationCount": -1,
-    "eliminationPercent": -1,
-    "affectRepeatables": true,
+    "Conditions": {
+        "removeConditions": {
+            "target": false,
+            "weapon": false,
+            "weaponMods": false,
+            "selfGear": false,
+            "enemyGear": false,
+            "selfHealthEffect": false,
+            "enemyHealthEffect": false,
+            "bodyPart": false,
+            "distance": false,
+            "time": false,
+            "map": false,
+            "zone": false,
+            "findInRaid": false
+        },
+        "handoverItemCount": -1,
+        "handoverItemPercent": -1,
+        "eliminationCount": -1,
+        "eliminationPercent": -1,
+        "affectRepeatables": true
+    },
+    "SpecialCases": {
+        "lightkeeperOnlyRequireLevel": 0,
+        "tarkovShooterM10": false,
+        "collectorPrerequisiteBackport": false
+    },
     "exemptQuests": [],
     "onlyQuests": [],
-    "questOverrides": {},
-
-    "lightkeeperOnlyRequireLevel": 0,
-    "tarkovShooterM10": false,
-    "collectorPrerequisiteBackport": false
+    "questOverrides": {}
 }

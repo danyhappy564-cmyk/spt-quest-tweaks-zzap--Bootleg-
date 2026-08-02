@@ -1,13 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>library</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <PropertyGroup>
-    <Version>4.7.0</Version>
+    <Version>4.8.0</Version>
     <Company>sgtlaggy</Company>
     <Copyright>Copyright © sgtlaggy 2026</Copyright>
   </PropertyGroup>
@@ -15,7 +16,7 @@
   <PropertyGroup>
     <DistDir>dist</DistDir>
     <DirToZip>$(DistDir)\zip</DirToZip>
-    <ModDir>$(DirToZip)\SPT\user\mods\$(MSBuildProjectName)</ModDir>
+    <ModDir>$(DirToZip)\SPT_Runtime\user\mods\$(MSBuildProjectName)</ModDir>
   </PropertyGroup>
 
   <Target Name="BuildDist" AfterTargets="AfterBuild">
@@ -36,8 +37,9 @@
   </Target>
 
   <ItemGroup>
-    <PackageReference Include="SPTarkov.Server.Core" Version="4.0.0" />
-    <PackageReference Include="SPTarkov.DI" Version="4.0.0" />
+    <PackageReference Include="SPTarkov.Server.Core" Version="4.1.0" />
+    <PackageReference Include="SPTarkov.Server.Web" Version="4.1.0" />
+    <PackageReference Include="SPTarkov.DI" Version="4.1.0" />
   </ItemGroup>
 
 </Project>

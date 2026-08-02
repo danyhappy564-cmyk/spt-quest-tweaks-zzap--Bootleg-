@@ -1,14 +1,11 @@
 ﻿using System.Reflection;
-using System.Text.Json;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Enums;
-using SPTarkov.Server.Core.Models.Utils;
 using SPTarkov.Server.Core.Models.Spt.Config;
-using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
+using SPTarkov.Server.Core.Models.Spt.Tables;
 using SPTarkov.Server.Core.Utils;
 using SPTarkov.Server.Core.Utils.Collections;
 using SPTarkov.Server.Core.Utils.Json;
@@ -43,28 +40,23 @@ public static class Constants
 
 public record LocationInfo(string Name, string Id, string MongoId);
 
-[Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 999)]
+[Injectable(TypePriority = OnLoadOrder.PostLoad + 999)]
 public class Mod(
-    ISptLogger<Mod> logger,
-    DatabaseService db,
-    ConfigServer configServer,
+    Config config,
+    QuestConfig questConfig,
+    TemplateTable templates,
+    LocaleTable locales,
+    LocationTable locationsTable,
     JsonUtil json
 ) : IOnLoad
 {
-    private Config? _config;
     private readonly string _modDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
 
     private Dictionary<string, string> localeOverrides = [];
 
-    public Task OnLoad()
+    public Task OnLoadAsync(CancellationToken cancellationToken)
     {
-        LoadConfig();
-        if (_config is null)
-        {
-            return Task.CompletedTask;
-        }
-
-        var allQuests = db.GetQuests();
+        var allQuests = templates.Quests;
         ModifySpecialCaseQuests(allQuests);
         ModifyQuestsNonExemptSettings(allQuests);
         ModifyQuestConditions(allQuests);
@@ -80,7 +72,7 @@ public class Mod(
 
     private void ModifySpecialCaseQuests(Dictionary<MongoId, Quest> quests)
     {
-        if (_config!.LightkeeperOnlyRequireLevel > 0)
+        if (config.LightkeeperOnlyRequireLevel > 0)
         {
             var conditions = quests[QuestTpl.NETWORK_PROVIDER_PART_1].Conditions.AvailableForStart!;
             var reuseId = conditions[0].Id;
@@ -90,7 +82,7 @@ public class Mod(
                 Id = reuseId,
                 ConditionType = "Level",
                 CompareMethod = ">=",
-                Value = _config.LightkeeperOnlyRequireLevel,
+                Value = config.LightkeeperOnlyRequireLevel,
                 DynamicLocale = false,
                 // Index = 0,
                 // GlobalQuestCounterId = "",
@@ -99,7 +91,7 @@ public class Mod(
             });
         }
 
-        if (_config.TarkovShooterM10)
+        if (config.TarkovShooterM10)
         {
             foreach (var questId in Constants.TarkovShooter)
             {
@@ -124,7 +116,7 @@ public class Mod(
             }
         }
 
-        if (_config.CollectorPrerequisiteBackport)
+        if (config.CollectorPrerequisiteBackport)
         {
             List<QuestCondition> prerequisites = [];
             var index = 0;
@@ -218,9 +210,9 @@ public class Mod(
 
     private void ModifyQuestsNonExemptSettings(Dictionary<MongoId, Quest> quests)
     {
-        if (!(_config!.RevealAllQuestObjectives
-              || _config.RevealUnknownRewards
-              || _config.RemoveTimeGates))
+        if (!(config!.RevealAllQuestObjectives
+              || config.RevealUnknownRewards
+              || config.RemoveTimeGates))
         {
             return;
         }
@@ -229,7 +221,7 @@ public class Mod(
         {
             var objectives = quest.Conditions.AvailableForFinish!;
 
-            if (_config.RevealAllQuestObjectives)
+            if (config.RevealAllQuestObjectives)
             {
                 foreach (var objective in objectives)
                 {
@@ -237,7 +229,7 @@ public class Mod(
                 }
             }
 
-            if (_config.RevealUnknownRewards)
+            if (config.RevealUnknownRewards)
             {
                 if (quest.Rewards is not null)
                 {
@@ -248,7 +240,7 @@ public class Mod(
                 }
             }
 
-            if (_config.RemoveTimeGates)
+            if (config.RemoveTimeGates)
             {
                 foreach (var prereq in quest.Conditions.AvailableForStart!)
                 {
@@ -263,22 +255,22 @@ public class Mod(
 
     private void ModifyQuestConditions(Dictionary<MongoId, Quest> quests)
     {
-        var remove = _config!.RemoveConditions;
+        var remove = config!.RemoveConditions;
         var shouldModifyConditions = remove.AnyEnabled
-                                     || (_config.QuestOverrides.Count > 0)
-                                     || _config.HandoverItemPercent >= 0
-                                     || _config.EliminationPercent >= 0
-                                     || _config.HandoverItemCount >= 0
-                                     || _config.EliminationCount >= 0;
+                                     || (config.QuestOverrides.Count > 0)
+                                     || config.HandoverItemPercent >= 0
+                                     || config.EliminationPercent >= 0
+                                     || config.HandoverItemCount >= 0
+                                     || config.EliminationCount >= 0;
         if (!shouldModifyConditions)
         {
             return;
         }
 
-        var items = db.GetItems();
-        var enLocale = db.GetLocales().Global["en"].Value!;
+        var items = templates.Items;
+        var enLocale = locales.Global["en"].Value!;
 
-        var locations = db.GetLocations().GetDictionary().Values
+        var locations = locationsTable.GetDictionary().Values
             .Where(loc => loc.Base?.Enabled ?? false)
             .Select(
                 (loc) =>
@@ -302,7 +294,7 @@ public class Mod(
             .Where(info => (info is not null))
             .ToList();
         // special-case factory night because it’s not enabled and name in locale is "Night Factory"
-        var factoryNight = db.GetLocation(nameof(ELocationName.factory4_night))!.Base;
+        var factoryNight = locationsTable.GetLocation(nameof(ELocationName.factory4_night))!.Base;
         locations.Add(new LocationInfo(
             "Factory",
             factoryNight.Id,
@@ -337,7 +329,7 @@ public class Mod(
                         && !Constants.KeyClasses.Contains(item.Parent)
                         && !Constants.HandoverCountItemBlacklist.Contains(item.Id))
                     {
-                        objective.Value = GetNewObjectiveValue(objective.Value, _config.HandoverItemCount, _config.HandoverItemPercent);
+                        objective.Value = GetNewObjectiveValue(objective.Value, config.HandoverItemCount, config.HandoverItemPercent);
                     }
                 }
 
@@ -400,10 +392,10 @@ public class Mod(
                         continue;
                     }
 
-                    if ((_config.EliminationCount >= 0 || _config.EliminationPercent >= 0)
+                    if ((config.EliminationCount >= 0 || config.EliminationPercent >= 0)
                         && condition.ConditionType == "Kills")
                     {
-                        objective.Value = GetNewObjectiveValue(objective.Value, _config.EliminationCount, _config.EliminationPercent);
+                        objective.Value = GetNewObjectiveValue(objective.Value, config.EliminationCount, config.EliminationPercent);
                     }
 
                     if (ShouldModifyCondition(questId, "Target"))
@@ -461,12 +453,10 @@ public class Mod(
             }
         }
 
-        if (!_config.AffectRepeatables)
+        if (!config.AffectRepeatables)
         {
             return;
         }
-
-        var questConfig = configServer.GetConfig<QuestConfig>();
 
         foreach (var quest in questConfig.RepeatableQuests)
         {
@@ -552,7 +542,7 @@ public class Mod(
         var prop = typeof(ConditionsConfig).GetProperty(condition)!;
 
         ConditionsConfig? questOverride;
-        if (_config!.QuestOverrides.TryGetValue(questId, out questOverride))
+        if (config!.QuestOverrides.TryGetValue(questId, out questOverride))
         {
             var shouldModify = prop.GetValue(questOverride) as bool?;
             if (shouldModify is not null)
@@ -561,35 +551,14 @@ public class Mod(
             }
         }
 
-        if ((_config.OnlyQuests.Count > 0) && !_config.OnlyQuests.Contains(questId))
+        if ((config.OnlyQuests.Count > 0) && !config.OnlyQuests.Contains(questId))
         {
             return false;
         }
-        if (_config.ExemptQuests.Contains(questId))
+        if (config.ExemptQuests.Contains(questId))
         {
             return false;
         }
-        return (prop.GetValue(_config.RemoveConditions) as bool?) ?? false;
-    }
-
-    private void LoadConfig()
-    {
-        try
-        {
-            _config = json.DeserializeFromFile<Config>(Path.Join(_modDir, "config.json"));
-        }
-        catch (JsonException)
-        {
-            logger.Error("Invalid config.");
-            return;
-        }
-
-        if (_config is null)
-        {
-            logger.Error("Missing config.");
-            return;
-        }
-
-        return;
+        return (prop.GetValue(config.RemoveConditions) as bool?) ?? false;
     }
 }

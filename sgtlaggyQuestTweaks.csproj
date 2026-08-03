@@ -22,7 +22,7 @@
   <Target Name="BuildDist" AfterTargets="AfterBuild">
     <RemoveDir Directories="$(DistDir)"/>
     <Copy
-        SourceFiles="$(TargetPath);config.json"
+        SourceFiles="$(TargetPath);config.json;README.md"
         DestinationFolder="$(ModDir)"/>
   </Target>
   <Target Name="CopyPDB" AfterTargets="BuildDist" Condition="'$(Configuration)' == 'Debug'">

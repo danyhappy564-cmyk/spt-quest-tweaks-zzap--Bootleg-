@@ -6,7 +6,9 @@ using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Models.Spt.Config;
 using SPTarkov.Server.Core.Models.Spt.Tables;
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.Server.Core.Utils;
+using SPTarkov.Server.Core.Utils.Cloners;
 using SPTarkov.Server.Core.Utils.Collections;
 using SPTarkov.Server.Core.Utils.Json;
 using Path = System.IO.Path;
@@ -41,35 +43,155 @@ public static class Constants
 public record LocationInfo(string Name, string Id, string MongoId);
 
 [Injectable(TypePriority = OnLoadOrder.PostLoad + 999)]
-public class Mod(
+public class Mod(QuestTweaksService service) : IOnLoad
+{
+    public Task OnLoadAsync(CancellationToken cancellationToken)
+    {
+        service.Apply();
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// Holds all quest modifications. Keeps a pristine copy of the quest database so the
+/// whole set of tweaks can be re-applied at runtime (F12 live settings) without a restart.
+/// </summary>
+[Injectable(InjectionType.Singleton)]
+public class QuestTweaksService(
 #if DEBUG
     JsonUtil json,
 #endif
+    ISptLogger<QuestTweaksService> logger,
+    ICloner cloner,
     Config config,
     QuestConfig questConfig,
     TemplateTable templates,
     LocaleTable locales,
     LocationTable locationsTable
-) : IOnLoad
+)
 {
+    private const string TagLocale = "kr";
+
     private readonly string _modDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
+    private readonly object _lock = new();
 
-    private Dictionary<string, string> localeOverrides = [];
+    private Dictionary<MongoId, Quest>? _originalQuests;
+    private List<RepeatableQuestConfig>? _originalRepeatables;
 
-    public Task OnLoadAsync(CancellationToken cancellationToken)
+    // objective id -> labels describing what was actually relaxed on it
+    private readonly Dictionary<string, List<string>> _relaxTags = [];
+    // locale key -> untouched text, for every key we ever tagged
+    private readonly Dictionary<string, string> _originalLocaleTexts = [];
+
+    /// <summary>
+    /// Restore the original quests and (re-)apply every tweak from the current config.
+    /// Returns the locale entries (language <see cref="TagLocale"/>) that changed, so a
+    /// client can merge them into its already-loaded locale.
+    /// </summary>
+    public Dictionary<string, string> Apply()
     {
-        var allQuests = templates.Quests;
-        ModifySpecialCaseQuests(allQuests);
-        ModifyQuestsNonExemptSettings(allQuests);
-        ModifyQuestConditions(allQuests);
+        lock (_lock)
+        {
+            if (_originalQuests is null)
+            {
+                _originalQuests = cloner.Clone(templates.Quests)!;
+                _originalRepeatables = cloner.Clone(questConfig.RepeatableQuests)!;
+            }
+            else
+            {
+                RestoreOriginals();
+            }
+
+            _relaxTags.Clear();
+
+            var allQuests = templates.Quests;
+            ModifySpecialCaseQuests(allQuests);
+            ModifyQuestsNonExemptSettings(allQuests);
+            ModifyQuestConditions(allQuests);
 
 #if DEBUG
-        // Dump modified quest database to a file for quick inspection in debug builds.
-        var dumpFile = Path.Join(_modDir, "dump.json");
-        File.WriteAllText(dumpFile, json.Serialize(allQuests, true));
+            // Dump modified quest database to a file for quick inspection in debug builds.
+            var dumpFile = Path.Join(_modDir, "dump.json");
+            File.WriteAllText(dumpFile, json.Serialize(allQuests, true));
 #endif
 
-        return Task.CompletedTask;
+            return ApplyLocaleTags();
+        }
+    }
+
+    private void RestoreOriginals()
+    {
+        foreach (var (questId, quest) in _originalQuests!)
+        {
+            templates.Quests[questId] = cloner.Clone(quest)!;
+        }
+
+        questConfig.RepeatableQuests.Clear();
+        questConfig.RepeatableQuests.AddRange(cloner.Clone(_originalRepeatables)!);
+    }
+
+    private void AddTag(string objectiveId, string label)
+    {
+        if (!_relaxTags.TryGetValue(objectiveId, out var labels))
+        {
+            labels = [];
+            _relaxTags[objectiveId] = labels;
+        }
+
+        if (!labels.Contains(label))
+        {
+            labels.Add(label);
+        }
+    }
+
+    private Dictionary<string, string> ApplyLocaleTags()
+    {
+        Dictionary<string, string> changes = [];
+        if (!locales.Global.TryGetValue(TagLocale, out var lazyLocale))
+        {
+            logger.Warning($"[QuestTweaks] locale '{TagLocale}' not found, relaxed-quest tags skipped");
+            return changes;
+        }
+
+        var locale = lazyLocale.Value!;
+
+        // put back every text we tagged before, then tag again from scratch
+        foreach (var (key, text) in _originalLocaleTexts)
+        {
+            locale[key] = text;
+            changes[key] = text;
+        }
+
+        if (!config.QualityOfLife.ShowRelaxedTag)
+        {
+            return changes;
+        }
+
+        var tagged = 0;
+        foreach (var (objectiveId, labels) in _relaxTags)
+        {
+            if (labels.Count == 0)
+            {
+                continue;
+            }
+
+            if (!_originalLocaleTexts.TryGetValue(objectiveId, out var original))
+            {
+                if (!locale.TryGetValue(objectiveId, out original))
+                {
+                    continue;
+                }
+                _originalLocaleTexts[objectiveId] = original;
+            }
+
+            var text = $"{original} [퀘스트 완화됨: {string.Join(" · ", labels)}]";
+            locale[objectiveId] = text;
+            changes[objectiveId] = text;
+            tagged++;
+        }
+
+        logger.Info($"[QuestTweaks] tagged {tagged} relaxed quest objectives ({TagLocale})");
+        return changes;
     }
 
     private void ModifySpecialCaseQuests(Dictionary<MongoId, Quest> quests)
@@ -113,6 +235,7 @@ public class Mod(
                         }
 
                         condition.Weapon!.Add(ItemTpl.SNIPERRIFLE_SAKO_TRG_M10_338_LM_BOLTACTION_SNIPER_RIFLE);
+                        AddTag(objective.Id, "TRG M10 허용");
                     }
                 }
             }
@@ -308,6 +431,10 @@ public class Mod(
                 {
                     if (ShouldModifyCondition(questId, "RemoveFindInRaid"))
                     {
+                        if (objective.OnlyFoundInRaid == true)
+                        {
+                            AddTag(objective.Id, "FIR 불필요");
+                        }
                         objective.OnlyFoundInRaid = false;
                     }
 
@@ -326,7 +453,12 @@ public class Mod(
                         && !Constants.KeyClasses.Contains(item.Parent)
                         && !Constants.HandoverCountItemBlacklist.Contains(item.Id))
                     {
+                        var oldValue = objective.Value;
                         objective.Value = GetNewObjectiveValue(questId, "HandoverItem", objective.Value);
+                        if (objective.Value != oldValue)
+                        {
+                            AddTag(objective.Id, $"수량 {oldValue}→{objective.Value}");
+                        }
                     }
                 }
 
@@ -354,6 +486,7 @@ public class Mod(
                                     zoneCond.Zones = null;
                                     zoneCond.ConditionType = "Location";
                                     zoneCond.Target = new ListOrT<string>([loc.Id], null);
+                                    AddTag(objective.Id, "구역→맵 전체");
                                 }
                                 // already replaced, support Factory and Ground Zero variants
                                 else
@@ -366,11 +499,32 @@ public class Mod(
                 }
 
                 objective.Counter!.Conditions!.RemoveAll(cond =>
-                    (ShouldModifyCondition(questId, "RemoveSelfHealthEffect") && (cond.ConditionType == "HealthEffect"))
-                    || (ShouldModifyCondition(questId, "RemoveSelfGear") && (cond.ConditionType == "Equipment"))
-                    || (ShouldModifyCondition(questId, "RemoveMap") && (cond.ConditionType == "Location"))
-                    || (ShouldModifyCondition(questId, "RemoveZone") && (cond.ConditionType == "InZone"))
-                );
+                {
+                    string? label = null;
+                    if (ShouldModifyCondition(questId, "RemoveSelfHealthEffect") && (cond.ConditionType == "HealthEffect"))
+                    {
+                        label = "본인 상태 무관";
+                    }
+                    else if (ShouldModifyCondition(questId, "RemoveSelfGear") && (cond.ConditionType == "Equipment"))
+                    {
+                        label = "착용 장비 무관";
+                    }
+                    else if (ShouldModifyCondition(questId, "RemoveMap") && (cond.ConditionType == "Location"))
+                    {
+                        label = "맵 무관";
+                    }
+                    else if (ShouldModifyCondition(questId, "RemoveZone") && (cond.ConditionType == "InZone"))
+                    {
+                        label = "구역 무관";
+                    }
+
+                    if (label is null)
+                    {
+                        return false;
+                    }
+                    AddTag(objective.Id, label);
+                    return true;
+                });
 
                 // auto-complete counters that no longer have an "action" condition
                 if (objective.Counter.Conditions.TrueForAll(cond =>
@@ -378,9 +532,15 @@ public class Mod(
                     || cond.ConditionType == "Location"
                     || cond.ConditionType == "InZone"))
                 {
+                    if (objective.Value != 0)
+                    {
+                        AddTag(objective.Id, "자동 완료");
+                    }
                     objective.Value = 0;
                     continue;
                 }
+
+                var valueBeforeElimination = objective.Value;
 
                 foreach (var condition in objective.Counter.Conditions)
                 {
@@ -397,40 +557,70 @@ public class Mod(
 
                     if (ShouldModifyCondition(questId, "RemoveTarget"))
                     {
+                        if ((condition.SavageRole?.Count > 0)
+                            || (condition.Target?.List?.Count > 0)
+                            || ((condition.Target?.Item is not null) && (condition.Target.Item != "Any")))
+                        {
+                            AddTag(objective.Id, "대상 무관");
+                        }
                         condition.SavageRole?.Clear();
                         condition.Target = new ListOrT<string>(null, "Any");
                     }
 
                     if (ShouldModifyCondition(questId, "RemoveWeapon"))
                     {
+                        if ((condition.Weapon?.Count > 0) || (condition.WeaponCaliber?.Count > 0))
+                        {
+                            AddTag(objective.Id, "무기 무관");
+                        }
                         condition.Weapon?.Clear();
                         condition.WeaponCaliber?.Clear();
                     }
 
                     if (ShouldModifyCondition(questId, "RemoveWeaponMods"))
                     {
+                        if ((condition.WeaponModsExclusive?.Any() == true) || (condition.WeaponModsInclusive?.Any() == true))
+                        {
+                            AddTag(objective.Id, "부착물 무관");
+                        }
                         condition.WeaponModsExclusive = [];
                         condition.WeaponModsInclusive = [];
                     }
 
                     if (ShouldModifyCondition(questId, "RemoveEnemyHealthEffect"))
                     {
+                        if (condition.EnemyHealthEffects?.Count > 0)
+                        {
+                            AddTag(objective.Id, "적 상태 무관");
+                        }
                         condition.EnemyHealthEffects?.Clear();
                     }
 
                     if (ShouldModifyCondition(questId, "RemoveEnemyGear"))
                     {
+                        if ((condition.EnemyEquipmentExclusive?.Any() == true) || (condition.EnemyEquipmentInclusive?.Any() == true))
+                        {
+                            AddTag(objective.Id, "적 장비 무관");
+                        }
                         condition.EnemyEquipmentExclusive = [];
                         condition.EnemyEquipmentInclusive = [];
                     }
 
                     if (ShouldModifyCondition(questId, "RemoveBodyPart"))
                     {
+                        if (condition.BodyPart?.Count > 0)
+                        {
+                            AddTag(objective.Id, "부위 무관");
+                        }
                         condition.BodyPart?.Clear();
                     }
 
                     if (ShouldModifyCondition(questId, "RemoveDistance"))
                     {
+                        if (condition.Distance?.Value > 0)
+                        {
+                            AddTag(objective.Id, "거리 무관");
+                        }
                         condition.Distance = new CounterConditionDistance
                         {
                             CompareMethod = ">=",
@@ -440,12 +630,21 @@ public class Mod(
 
                     if (ShouldModifyCondition(questId, "RemoveTime") && (condition.Daytime is not null))
                     {
+                        if ((condition.Daytime.From != 0) || (condition.Daytime.To != 0))
+                        {
+                            AddTag(objective.Id, "시간대 무관");
+                        }
                         condition.Daytime = new DaytimeCounter
                         {
                             From = 0,
                             To = 0
                         };
                     }
+                }
+
+                if (objective.Value != valueBeforeElimination)
+                {
+                    AddTag(objective.Id, $"목표 {valueBeforeElimination}→{objective.Value}");
                 }
             }
         }

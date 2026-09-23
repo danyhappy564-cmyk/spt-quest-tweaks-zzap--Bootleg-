@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SPTarkov.DI.Annotations;
@@ -43,6 +43,10 @@ public record QualityOfLifeConfig
 
     [JsonPropertyName("removeTimeGates")]
     public bool RemoveTimeGates { get; set; }
+
+    // Append "[퀘스트 완화됨: ...]" to the Korean text of every objective that was actually relaxed.
+    [JsonPropertyName("showRelaxedTag")]
+    public bool ShowRelaxedTag { get; set; } = true;
 }
 
 public record ConditionsConfig
@@ -141,22 +145,30 @@ public record SpecialCasesConfig
 
 public class ConfigRegistration : IOnDIConstruct
 {
+    public static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new StringToMongoIdConverter() }
+    };
+
+    public static string ConfigPath =>
+        Path.Join(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "config.json");
+
+    public static void Save(Config config)
+    {
+        File.WriteAllText(ConfigPath, JsonSerializer.Serialize(config, JsonOptions) + Environment.NewLine);
+    }
+
     public static async Task OnDIConstructAsync(
         IServiceCollection serviceCollection,
         CancellationToken cancellationToken
     )
     {
-        var modDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-
-        var jsonSerializerOptions = new JsonSerializerOptions()
-        {
-            ReadCommentHandling = JsonCommentHandling.Skip,
-            AllowTrailingCommas = true,
-            Converters = { new StringToMongoIdConverter() }
-        };
-
-        var configJson = await File.ReadAllTextAsync(Path.Join(modDir, "config.json"), cancellationToken);
-        var config = JsonSerializer.Deserialize<Config>(configJson, jsonSerializerOptions)!;
+        var configJson = await File.ReadAllTextAsync(ConfigPath, cancellationToken);
+        var config = JsonSerializer.Deserialize<Config>(configJson, JsonOptions)!;
 
         serviceCollection.AddSingleton(config);
     }

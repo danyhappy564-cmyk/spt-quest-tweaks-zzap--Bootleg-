@@ -2,7 +2,8 @@
     "QualityOfLife": {
         "revealAllQuestObjectives": false,
         "revealUnknownRewards": false,
-        "removeTimeGates": false
+        "removeTimeGates": false,
+        "showRelaxedTag": true
     },
     "GlobalConditions": {
         "removeTarget": false,

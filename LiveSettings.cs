@@ -39,6 +39,10 @@ public record LiveSettingsResponse
     // Locale entries ("kr") that changed; the client merges them into its loaded locale.
     [JsonPropertyName("localeChanges")]
     public Dictionary<string, string>? LocaleChanges { get; set; }
+
+    // Objective id -> relaxed labels; the client appends "[퀘스트 완화됨: ...]" when displaying.
+    [JsonPropertyName("tags")]
+    public Dictionary<string, string>? Tags { get; set; }
 }
 
 [Injectable(InjectionType.Singleton)]
@@ -54,7 +58,7 @@ public class LiveSettingsService(
     {
         lock (_lock)
         {
-            return new LiveSettingsResponse { Ok = true, Settings = Current() };
+            return new LiveSettingsResponse { Ok = true, Settings = Current(), Tags = questTweaks.GetTagLabels() };
         }
     }
 
@@ -94,7 +98,8 @@ public class LiveSettingsService(
                 Ok = true,
                 Message = message,
                 Settings = Current(),
-                LocaleChanges = localeChanges
+                LocaleChanges = localeChanges,
+                Tags = questTweaks.GetTagLabels()
             };
         }
     }

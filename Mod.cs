@@ -130,6 +130,25 @@ public class QuestTweaksService(
         questConfig.RepeatableQuests.AddRange(cloner.Clone(_originalRepeatables)!);
     }
 
+    /// <summary>
+    /// Objective id -> "부위 무관 · 목표 5→3" for every relaxed objective (empty when tags are off).
+    /// The client plugin appends these at display time, independent of the locale served at login.
+    /// </summary>
+    public Dictionary<string, string> GetTagLabels()
+    {
+        lock (_lock)
+        {
+            if (!config.QualityOfLife.ShowRelaxedTag)
+            {
+                return [];
+            }
+
+            return _relaxTags
+                .Where(kv => kv.Value.Count > 0)
+                .ToDictionary(kv => kv.Key, kv => string.Join(" · ", kv.Value));
+        }
+    }
+
     private void AddTag(string objectiveId, string label)
     {
         if (!_relaxTags.TryGetValue(objectiveId, out var labels))

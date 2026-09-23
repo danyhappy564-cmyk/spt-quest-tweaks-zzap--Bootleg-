@@ -6,6 +6,7 @@ using System.Threading;
 using BepInEx;
 using BepInEx.Configuration;
 using EFT;
+using HarmonyLib;
 using Newtonsoft.Json.Linq;
 
 namespace QuestTweaksLive
@@ -15,7 +16,7 @@ namespace QuestTweaksLive
     /// The server's config.json is the source of truth: on start the plugin pulls it, and every
     /// change made in F12 is pushed back, saved to config.json and re-applied without a restart.
     /// </summary>
-    [BepInPlugin(Guid, "Quest Tweaks Live (F12)", "1.0.0")]
+    [BepInPlugin(Guid, "Quest Tweaks Live (F12)", "1.1.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "com.zzap.questtweaks.live";
@@ -39,6 +40,15 @@ namespace QuestTweaksLive
         {
             BindAll();
             Config.SettingChanged += OnSettingChanged;
+
+            try
+            {
+                new Harmony(Guid).PatchAll(typeof(RelaxedTagPatch));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"relaxed-tag patch failed, tags only come from the server locale: {ex}");
+            }
             SetStatus("서버 연결 대기 중");
         }
 
@@ -101,6 +111,7 @@ namespace QuestTweaksLive
                     _mainThread.Enqueue(() =>
                     {
                         ApplyServerSettings(response["settings"]);
+                        ApplyTags(response["tags"] as JObject);
                         _synced = true;
                         _dirty = false;
                         _busy = false;
@@ -140,6 +151,7 @@ namespace QuestTweaksLive
                             ApplyServerSettings(response["settings"]);
                         }
 
+                        ApplyTags(response["tags"] as JObject);
                         var updated = MergeLocaleChangesSafe(response["localeChanges"] as JObject);
                         var message = (string)response["message"] ?? "적용 완료";
                         SetStatus($"{message} ({DateTime.Now:HH:mm:ss}, 문구 {updated}개 갱신)");
@@ -215,6 +227,21 @@ namespace QuestTweaksLive
             {
                 _suppress = false;
             }
+        }
+
+        private void ApplyTags(JObject tags)
+        {
+            var map = new Dictionary<string, string>();
+            if (tags != null)
+            {
+                foreach (var property in tags.Properties())
+                {
+                    map[property.Name] = (string)property.Value;
+                }
+            }
+
+            RelaxedTagPatch.Tags = map;
+            Logger.LogInfo($"relaxed-quest tags received: {map.Count}");
         }
 
         private int MergeLocaleChangesSafe(JObject changes)

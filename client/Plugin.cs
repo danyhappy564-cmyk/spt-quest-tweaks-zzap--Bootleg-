@@ -16,7 +16,7 @@ namespace QuestTweaksLive
     /// The server's config.json is the source of truth: on start the plugin pulls it, and every
     /// change made in F12 is pushed back, saved to config.json and re-applied without a restart.
     /// </summary>
-    [BepInPlugin(Guid, "Quest Tweaks Live (F12)", "1.1.0")]
+    [BepInPlugin(Guid, "Quest Tweaks Live (F12)", "1.2.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "com.zzap.questtweaks.live";
@@ -28,6 +28,7 @@ namespace QuestTweaksLive
         private readonly List<IntSetting> _ints = new List<IntSetting>();
         private readonly ConcurrentQueue<Action> _mainThread = new ConcurrentQueue<Action>();
         private ConfigEntry<string> _status;
+        private ConfigEntry<string> _tagColor;
 
         private bool _synced;
         private bool _dirty;
@@ -87,7 +88,7 @@ namespace QuestTweaksLive
 
         private void OnSettingChanged(object sender, SettingChangedEventArgs e)
         {
-            if (_suppress || e.ChangedSetting == _status)
+            if (_suppress || e.ChangedSetting == _status || e.ChangedSetting == _tagColor)
             {
                 return;
             }
@@ -229,6 +230,17 @@ namespace QuestTweaksLive
             }
         }
 
+        private void ApplyTagColor()
+        {
+            var value = (_tagColor.Value ?? "").Trim();
+            if (value.Length > 0 && !System.Text.RegularExpressions.Regex.IsMatch(value, "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$"))
+            {
+                Logger.LogWarning($"invalid tag color '{value}', using no color");
+                value = "";
+            }
+            RelaxedTagPatch.ColorHex = value;
+        }
+
         private void ApplyTags(JObject tags)
         {
             var map = new Dictionary<string, string>();
@@ -310,6 +322,13 @@ namespace QuestTweaksLive
             var order = 100;
             Bool(display, "완화 표시 붙이기", "QualityOfLife", "showRelaxedTag", true,
                 "완화된 퀘스트 목표 문구 뒤에 [퀘스트 완화됨: 부위 무관 · 목표 5→3] 같은 표시를 붙인다. 한국어 클라이언트 전용.", order--);
+
+            // client-only: not sent to the server
+            _tagColor = Config.Bind(display, "완화 표시 색상", "#FF4040",
+                new ConfigDescription("완화 표시 글자 색. #RRGGBB 형식 (예: #FF4040 빨강, #FFD040 노랑). 비우면 색 없음.", null,
+                    new ConfigurationManagerAttributes { Order = order-- }));
+            ApplyTagColor();
+            _tagColor.SettingChanged += (sender, args) => ApplyTagColor();
 
             order = 100;
             Bool(remove, "대상 제한 해제", "GlobalConditions", "removeTarget", false, "PMC/스캐브/보스 등 사살 대상 제한을 없앤다.", order--);

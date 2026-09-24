@@ -19,6 +19,9 @@ namespace QuestTweaksLive
         // objective id -> "부위 무관 · 목표 5→3"; replaced as a whole, never mutated
         public static volatile Dictionary<string, string> Tags = new Dictionary<string, string>();
 
+        // TextMeshPro rich-text color for the tag, e.g. "#FF4040"; empty = no color
+        public static volatile string ColorHex = "#FF4040";
+
         [HarmonyPostfix]
         private static void Postfix(string id, string locale, ref string localizedValue, bool __result)
         {
@@ -33,13 +36,22 @@ namespace QuestTweaksLive
                 return;
             }
 
-            // the server may already have put the tag into the locale itself
-            if (localizedValue.Contains(Marker))
+            // the server may already have put a plain tag at the end of the locale text: replace it
+            var serverTag = localizedValue.IndexOf(" " + Marker, System.StringComparison.Ordinal);
+            if (serverTag >= 0)
+            {
+                localizedValue = localizedValue.Substring(0, serverTag);
+            }
+            else if (localizedValue.Contains(Marker))
             {
                 return;
             }
 
-            localizedValue = localizedValue + " " + Marker + ": " + label + "]";
+            var tag = Marker + ": " + label + "]";
+            var color = ColorHex;
+            localizedValue = string.IsNullOrEmpty(color)
+                ? localizedValue + " " + tag
+                : localizedValue + " <color=" + color + ">" + tag + "</color>";
         }
     }
 }

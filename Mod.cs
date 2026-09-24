@@ -7,6 +7,8 @@ using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Models.Spt.Config;
 using SPTarkov.Server.Core.Models.Spt.Tables;
 using SPTarkov.Common.Models.Logging;
+using SPTarkov.Server.Core.Helpers.Profile;
+using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Utils;
 using SPTarkov.Server.Core.Utils.Cloners;
 using SPTarkov.Server.Core.Utils.Collections;
@@ -42,7 +44,8 @@ public static class Constants
 
 public record LocationInfo(string Name, string Id, string MongoId);
 
-[Injectable(TypePriority = OnLoadOrder.PostLoad + 999)]
+// run after every other mod so quests they add are included
+[Injectable(TypePriority = int.MaxValue - 1000)]
 public class Mod(QuestTweaksService service) : IOnLoad
 {
     public Task OnLoadAsync(CancellationToken cancellationToken)
@@ -63,6 +66,7 @@ public class QuestTweaksService(
 #endif
     ISptLogger<QuestTweaksService> logger,
     ICloner cloner,
+    ProfileHelper profileHelper,
     Config config,
     QuestConfig questConfig,
     TemplateTable templates,
@@ -100,6 +104,15 @@ public class QuestTweaksService(
             else
             {
                 RestoreOriginals();
+            }
+
+            // quests another mod added after our first pass: remember them untouched too
+            foreach (var (questId, quest) in templates.Quests)
+            {
+                if (!_originalQuests.ContainsKey(questId))
+                {
+                    _originalQuests[questId] = cloner.Clone(quest)!;
+                }
             }
 
             _relaxTags.Clear();
@@ -147,6 +160,101 @@ public class QuestTweaksService(
                 .Where(kv => kv.Value.Count > 0)
                 .ToDictionary(kv => kv.Key, kv => string.Join(" · ", kv.Value));
         }
+    }
+
+    /// <summary>True when quests were added to the database after the last apply (late-loading mods).</summary>
+    public bool HasNewQuests()
+    {
+        lock (_lock)
+        {
+            return (_originalQuests is not null) && templates.Quests.Keys.Any(id => !_originalQuests.ContainsKey(id));
+        }
+    }
+
+    /// <summary>
+    /// <see cref="GetTagLabels()"/> plus the player's active repeatable (daily/weekly) objectives.
+    /// Those are generated per profile with the relaxed chances, so we label what the generated
+    /// objective actually lacks.
+    /// </summary>
+    public Dictionary<string, string> GetTagLabels(MongoId sessionId)
+    {
+        var labels = GetTagLabels();
+        if (!config.QualityOfLife.ShowRelaxedTag || !config.GlobalConditions.AffectRepeatables || sessionId.IsEmpty)
+        {
+            return labels;
+        }
+
+        PmcData? pmc;
+        try
+        {
+            pmc = profileHelper.GetPmcProfile(sessionId);
+        }
+        catch (Exception ex)
+        {
+            logger.Debug($"[QuestTweaks] no profile for {sessionId}: {ex.Message}");
+            return labels;
+        }
+
+        foreach (var group in pmc?.RepeatableQuests ?? [])
+        {
+            var configId = questConfig.RepeatableQuests.FirstOrDefault(c => c.Name == group.Name)?.Id ?? group.Id;
+            if (configId is null)
+            {
+                continue;
+            }
+
+            foreach (var quest in group.ActiveQuests ?? [])
+            {
+                foreach (var objective in quest.Conditions?.AvailableForFinish ?? [])
+                {
+                    var repeatableLabels = GetRepeatableLabels(configId.Value, objective);
+                    if (repeatableLabels.Count > 0)
+                    {
+                        labels[objective.Id.ToString()] = string.Join(" · ", repeatableLabels);
+                    }
+                }
+            }
+        }
+
+        return labels;
+    }
+
+    private List<string> GetRepeatableLabels(MongoId configId, QuestCondition objective)
+    {
+        List<string> labels = [];
+        if (objective.ConditionType == "HandoverItem" || objective.ConditionType == "FindItem")
+        {
+            if (ShouldModifyCondition(configId, "RemoveFindInRaid") && (objective.OnlyFoundInRaid != true))
+            {
+                labels.Add("FIR 불필요");
+            }
+            return labels;
+        }
+
+        var kills = objective.Counter?.Conditions?.FirstOrDefault(c => c.ConditionType == "Kills");
+        if (kills is null)
+        {
+            return labels;
+        }
+
+        if (ShouldModifyCondition(configId, "RemoveTarget")
+            && ((kills.Target?.Item == "Any") || ((kills.Target?.Item is null) && !(kills.Target?.List?.Count > 0))))
+        {
+            labels.Add("대상 무관");
+        }
+        if (ShouldModifyCondition(configId, "RemoveWeapon") && !(kills.Weapon?.Count > 0) && !(kills.WeaponCaliber?.Count > 0))
+        {
+            labels.Add("무기 무관");
+        }
+        if (ShouldModifyCondition(configId, "RemoveBodyPart") && !(kills.BodyPart?.Count > 0))
+        {
+            labels.Add("부위 무관");
+        }
+        if (ShouldModifyCondition(configId, "RemoveDistance") && !(kills.Distance?.Value > 0))
+        {
+            labels.Add("거리 무관");
+        }
+        return labels;
     }
 
     private void AddTag(string objectiveId, string label)

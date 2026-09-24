@@ -16,19 +16,23 @@ namespace QuestTweaksLive
     /// The server's config.json is the source of truth: on start the plugin pulls it, and every
     /// change made in F12 is pushed back, saved to config.json and re-applied without a restart.
     /// </summary>
-    [BepInPlugin(Guid, "Quest Tweaks Live (F12)", "1.2.0")]
+    [BepInPlugin(Guid, "Quest Tweaks Live (F12)", "1.3.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "com.zzap.questtweaks.live";
         private const string TagLocale = "kr";
         private const double PushDelaySeconds = 0.8;
         private const double RetrySeconds = 10;
+        private const double TagRefreshSeconds = 30;
 
         private readonly List<BoolSetting> _bools = new List<BoolSetting>();
         private readonly List<IntSetting> _ints = new List<IntSetting>();
         private readonly ConcurrentQueue<Action> _mainThread = new ConcurrentQueue<Action>();
         private ConfigEntry<string> _status;
         private ConfigEntry<string> _tagColor;
+        private ConfigEntry<bool> _tagNewLine;
+        private ConfigEntry<int> _tagSize;
+        private DateTime _nextTagRefresh;
 
         private bool _synced;
         private bool _dirty;
@@ -44,7 +48,7 @@ namespace QuestTweaksLive
 
             try
             {
-                new Harmony(Guid).PatchAll(typeof(RelaxedTagPatch));
+                RelaxedTagPatch.Apply(new Harmony(Guid));
             }
             catch (Exception ex)
             {
@@ -84,11 +88,16 @@ namespace QuestTweaksLive
             {
                 PushToServer();
             }
+            else if (now >= _nextTagRefresh)
+            {
+                RefreshTags();
+            }
         }
 
         private void OnSettingChanged(object sender, SettingChangedEventArgs e)
         {
-            if (_suppress || e.ChangedSetting == _status || e.ChangedSetting == _tagColor)
+            if (_suppress || e.ChangedSetting == _status || e.ChangedSetting == _tagColor
+                || e.ChangedSetting == _tagNewLine || e.ChangedSetting == _tagSize)
             {
                 return;
             }
@@ -115,6 +124,7 @@ namespace QuestTweaksLive
                         ApplyTags(response["tags"] as JObject);
                         _synced = true;
                         _dirty = false;
+                        _nextTagRefresh = DateTime.UtcNow.AddSeconds(TagRefreshSeconds);
                         _busy = false;
                         SetStatus($"서버와 동기화됨 ({DateTime.Now:HH:mm:ss})");
                     });
@@ -127,6 +137,33 @@ namespace QuestTweaksLive
                         _nextSyncAttempt = DateTime.UtcNow.AddSeconds(RetrySeconds);
                         SetStatus($"서버 연결 실패, {RetrySeconds}초 후 재시도 ({ex.Message})");
                         Logger.LogWarning($"settings fetch failed: {ex.Message}");
+                    });
+                }
+            });
+        }
+
+        // daily/weekly quests are regenerated while playing; keep their tags current
+        private void RefreshTags()
+        {
+            _busy = true;
+            _nextTagRefresh = DateTime.UtcNow.AddSeconds(TagRefreshSeconds);
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    var response = ServerApi.Post(ServerApi.TagsRoute, "{}");
+                    _mainThread.Enqueue(() =>
+                    {
+                        _busy = false;
+                        ApplyTags(response["tags"] as JObject, false);
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _mainThread.Enqueue(() =>
+                    {
+                        _busy = false;
+                        Logger.LogDebug($"tag refresh failed: {ex.Message}");
                     });
                 }
             });
@@ -230,6 +267,12 @@ namespace QuestTweaksLive
             }
         }
 
+        private void ApplyTagStyle()
+        {
+            RelaxedTagPatch.NewLine = _tagNewLine.Value;
+            RelaxedTagPatch.SizePercent = _tagSize.Value;
+        }
+
         private void ApplyTagColor()
         {
             var value = (_tagColor.Value ?? "").Trim();
@@ -241,7 +284,7 @@ namespace QuestTweaksLive
             RelaxedTagPatch.ColorHex = value;
         }
 
-        private void ApplyTags(JObject tags)
+        private void ApplyTags(JObject tags, bool log = true)
         {
             var map = new Dictionary<string, string>();
             if (tags != null)
@@ -252,8 +295,12 @@ namespace QuestTweaksLive
                 }
             }
 
+            var changed = map.Count != RelaxedTagPatch.Tags.Count;
             RelaxedTagPatch.Tags = map;
-            Logger.LogInfo($"relaxed-quest tags received: {map.Count}");
+            if (log || changed)
+            {
+                Logger.LogInfo($"relaxed-quest tags received: {map.Count}");
+            }
         }
 
         private int MergeLocaleChangesSafe(JObject changes)
@@ -329,6 +376,16 @@ namespace QuestTweaksLive
                     new ConfigurationManagerAttributes { Order = order-- }));
             ApplyTagColor();
             _tagColor.SettingChanged += (sender, args) => ApplyTagColor();
+
+            _tagNewLine = Config.Bind(display, "완화 표시 줄바꿈", true,
+                new ConfigDescription("켜면 완화 표시를 목표 문구 아래 줄에 따로 보여준다.", null,
+                    new ConfigurationManagerAttributes { Order = order-- }));
+            _tagSize = Config.Bind(display, "완화 표시 글자 크기(%)", 90,
+                new ConfigDescription("목표 문구 대비 완화 표시 글자 크기. 100 = 같은 크기.", new AcceptableValueRange<int>(50, 150),
+                    new ConfigurationManagerAttributes { Order = order-- }));
+            ApplyTagStyle();
+            _tagNewLine.SettingChanged += (sender, args) => ApplyTagStyle();
+            _tagSize.SettingChanged += (sender, args) => ApplyTagStyle();
 
             order = 100;
             Bool(remove, "대상 제한 해제", "GlobalConditions", "removeTarget", false, "PMC/스캐브/보스 등 사살 대상 제한을 없앤다.", order--);

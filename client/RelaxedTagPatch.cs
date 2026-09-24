@@ -1,16 +1,20 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using EFT;
+using EFT.Quests;
 using HarmonyLib;
 
 namespace QuestTweaksLive
 {
     /// <summary>
-    /// Appends "[퀘스트 완화됨: ...]" to relaxed objectives at display time.
-    /// Every text lookup in the game (id.Localized() -> LocalizedValue -> TryGetLocalization) ends here,
-    /// so this works even if the locale the game loaded at login lacks the server-side tag
-    /// (e.g. another translation mod overwrote it).
+    /// Appends "[퀘스트 완화됨: ...]" to relaxed objectives at display time, in two places:
+    /// 1. LocalizationManager.TryGetLocalization — every "id".Localized() lookup ends here, so normal
+    ///    quest objectives are tagged even if the locale loaded at login lacks the server-side tag.
+    /// 2. Condition.FormattedDescription overrides — repeatable (daily/weekly) objectives use
+    ///    DynamicLocale, i.e. the game builds their text itself without looking up the objective id.
     /// </summary>
-    [HarmonyPatch(typeof(LocalizationManager), nameof(LocalizationManager.TryGetLocalization))]
     internal static class RelaxedTagPatch
     {
         private const string TagLocale = "kr";
@@ -22,36 +26,110 @@ namespace QuestTweaksLive
         // TextMeshPro rich-text color for the tag, e.g. "#FF4040"; empty = no color
         public static volatile string ColorHex = "#FF4040";
 
-        [HarmonyPostfix]
-        private static void Postfix(string id, string locale, ref string localizedValue, bool __result)
+        // put the tag on its own line under the objective text
+        public static volatile bool NewLine = true;
+
+        // TextMeshPro size of the tag in percent; 100 = same as the objective text
+        public static volatile int SizePercent = 90;
+
+        public static void Apply(Harmony harmony)
         {
-            if (!__result || locale != TagLocale || id == null || string.IsNullOrEmpty(localizedValue))
+            harmony.Patch(
+                AccessTools.Method(typeof(LocalizationManager), nameof(LocalizationManager.TryGetLocalization)),
+                postfix: new HarmonyMethod(typeof(RelaxedTagPatch), nameof(LocalizationPostfix)));
+
+            var descriptionPostfix = new HarmonyMethod(typeof(RelaxedTagPatch), nameof(DescriptionPostfix));
+            foreach (var type in ConditionTypes())
+            {
+                var getter = AccessTools.DeclaredPropertyGetter(type, nameof(Condition.FormattedDescription));
+                if (getter == null || getter.IsAbstract || getter.GetMethodBody() == null)
+                {
+                    continue;
+                }
+                harmony.Patch(getter, postfix: descriptionPostfix);
+            }
+        }
+
+        private static IEnumerable<Type> ConditionTypes()
+        {
+            Type[] types;
+            try
+            {
+                types = typeof(Condition).Assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                types = ex.Types.Where(t => t != null).ToArray();
+            }
+            return types.Where(t => typeof(Condition).IsAssignableFrom(t) && !t.ContainsGenericParameters);
+        }
+
+        private static void LocalizationPostfix(string id, string locale, ref string localizedValue, bool __result)
+        {
+            if (!__result || locale != TagLocale || id == null)
             {
                 return;
+            }
+            localizedValue = Decorate(id, localizedValue);
+        }
+
+        private static void DescriptionPostfix(Condition __instance, ref string __result)
+        {
+            if (__instance == null || !IsKorean())
+            {
+                return;
+            }
+            __result = Decorate(__instance.id.ToString(), __result);
+        }
+
+        private static bool IsKorean()
+        {
+            try
+            {
+                return LocalizationManager.Instance.Culture == TagLocale;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string Decorate(string id, string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return text;
             }
 
             var tags = Tags;
             if (tags.Count == 0 || !tags.TryGetValue(id, out var label))
             {
-                return;
+                return text;
             }
 
             // the server may already have put a plain tag at the end of the locale text: replace it
-            var serverTag = localizedValue.IndexOf(" " + Marker, System.StringComparison.Ordinal);
+            var serverTag = text.IndexOf(" " + Marker, StringComparison.Ordinal);
             if (serverTag >= 0)
             {
-                localizedValue = localizedValue.Substring(0, serverTag);
+                text = text.Substring(0, serverTag);
             }
-            else if (localizedValue.Contains(Marker))
+            else if (text.Contains(Marker))
             {
-                return;
+                return text; // already decorated (e.g. base getter went through the locale patch)
             }
 
             var tag = Marker + ": " + label + "]";
             var color = ColorHex;
-            localizedValue = string.IsNullOrEmpty(color)
-                ? localizedValue + " " + tag
-                : localizedValue + " <color=" + color + ">" + tag + "</color>";
+            if (!string.IsNullOrEmpty(color))
+            {
+                tag = "<color=" + color + ">" + tag + "</color>";
+            }
+            var size = SizePercent;
+            if (size != 100)
+            {
+                tag = "<size=" + size + "%>" + tag + "</size>";
+            }
+            return text + (NewLine ? "\n" : " ") + tag;
         }
     }
 }

@@ -14,8 +14,13 @@ namespace QuestTweaksLive
     {
         public const string GetRoute = "/sgtlaggy-questtweaks/settings/get";
         public const string SetRoute = "/sgtlaggy-questtweaks/settings/set";
+        public const string TagsRoute = "/sgtlaggy-questtweaks/tags";
 
         private static string _backendUrl;
+        private static string _sessionId;
+
+        // the launcher passes the profile/session id as -token=...; the server uses it to find daily quests
+        public static string SessionId => _sessionId ?? (_sessionId = FindArg("-token=") ?? "");
 
         public static string BackendUrl => _backendUrl ?? (_backendUrl = FindBackendUrl());
 
@@ -27,6 +32,10 @@ namespace QuestTweaksLive
             request.ContentType = "application/json";
             request.Headers["requestcompressed"] = "0";
             request.Headers["responsecompressed"] = "0";
+            if (SessionId.Length > 0)
+            {
+                request.Headers["Cookie"] = "PHPSESSID=" + SessionId;
+            }
             // the local SPT server uses a self-signed certificate
             request.ServerCertificateValidationCallback = (sender, cert, chain, errors) => true;
 
@@ -42,6 +51,18 @@ namespace QuestTweaksLive
             {
                 return JObject.Parse(reader.ReadToEnd());
             }
+        }
+
+        private static string FindArg(string prefix)
+        {
+            foreach (var arg in Environment.GetCommandLineArgs())
+            {
+                if (arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return arg.Substring(prefix.Length);
+                }
+            }
+            return null;
         }
 
         // The launcher starts the game with -config={"BackendUrl":"https://127.0.0.1:6969",...}

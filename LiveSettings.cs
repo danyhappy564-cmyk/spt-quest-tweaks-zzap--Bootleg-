@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Common.Models.Logging;
+using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Models.Utils;
 using SPTarkov.Server.Core.Utils;
@@ -54,15 +55,24 @@ public class LiveSettingsService(
 {
     private readonly object _lock = new();
 
-    public LiveSettingsResponse Get()
+    public LiveSettingsResponse Get(MongoId sessionId)
     {
         lock (_lock)
         {
-            return new LiveSettingsResponse { Ok = true, Settings = Current(), Tags = questTweaks.GetTagLabels() };
+            // a mod that loads after us may have added quests; include them
+            if (questTweaks.HasNewQuests())
+            {
+                questTweaks.Apply();
+                logger.Info("[QuestTweaks] quests added by other mods detected, quest tweaks re-applied");
+            }
+
+            return new LiveSettingsResponse { Ok = true, Settings = Current(), Tags = questTweaks.GetTagLabels(sessionId) };
         }
     }
 
-    public LiveSettingsResponse Set(LiveSettings request)
+    public LiveSettingsResponse Tags(MongoId sessionId) => new() { Ok = true, Tags = questTweaks.GetTagLabels(sessionId) };
+
+    public LiveSettingsResponse Set(LiveSettings request, MongoId sessionId)
     {
         lock (_lock)
         {
@@ -99,7 +109,7 @@ public class LiveSettingsService(
                 Message = message,
                 Settings = Current(),
                 LocaleChanges = localeChanges,
-                Tags = questTweaks.GetTagLabels()
+                Tags = questTweaks.GetTagLabels(sessionId)
             };
         }
     }
@@ -119,12 +129,17 @@ public class LiveSettingsRouter(JsonUtil jsonUtil, LiveSettingsService service) 
         new RouteAction<EmptyRequestData>(
             "/sgtlaggy-questtweaks/settings/get",
             (url, info, sessionId, output, cancellationToken) =>
-                ValueTask.FromResult(jsonUtil.Serialize(service.Get())!)
+                ValueTask.FromResult(jsonUtil.Serialize(service.Get(sessionId))!)
+        ),
+        new RouteAction<EmptyRequestData>(
+            "/sgtlaggy-questtweaks/tags",
+            (url, info, sessionId, output, cancellationToken) =>
+                ValueTask.FromResult(jsonUtil.Serialize(service.Tags(sessionId))!)
         ),
         new RouteAction<LiveSettings>(
             "/sgtlaggy-questtweaks/settings/set",
             (url, info, sessionId, output, cancellationToken) =>
-                ValueTask.FromResult(jsonUtil.Serialize(service.Set(info))!)
+                ValueTask.FromResult(jsonUtil.Serialize(service.Set(info, sessionId))!)
         )
     ]
 );

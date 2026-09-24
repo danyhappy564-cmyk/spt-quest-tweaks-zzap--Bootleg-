@@ -16,7 +16,7 @@ namespace QuestTweaksLive
     /// The server's config.json is the source of truth: on start the plugin pulls it, and every
     /// change made in F12 is pushed back, saved to config.json and re-applied without a restart.
     /// </summary>
-    [BepInPlugin(Guid, "Quest Tweaks Live (F12)", "1.4.0")]
+    [BepInPlugin(Guid, "Quest Tweaks Live (F12)", "1.5.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "com.zzap.questtweaks.live";
@@ -127,7 +127,10 @@ namespace QuestTweaksLive
                         _dirty = false;
                         _nextTagRefresh = DateTime.UtcNow.AddSeconds(TagRefreshSeconds);
                         _busy = false;
-                        SetStatus($"서버와 동기화됨 ({DateTime.Now:HH:mm:ss})");
+                        if (!ReportProfileFixes(response))
+                        {
+                            SetStatus($"서버와 동기화됨 ({DateTime.Now:HH:mm:ss})");
+                        }
                     });
                 }
                 catch (Exception ex)
@@ -157,6 +160,7 @@ namespace QuestTweaksLive
                     {
                         _busy = false;
                         ApplyTags(response["tags"] as JObject, false);
+                        ReportProfileFixes(response);
                     });
                 }
                 catch (Exception ex)
@@ -194,6 +198,7 @@ namespace QuestTweaksLive
                         var updated = MergeLocaleChangesSafe(response["localeChanges"] as JObject);
                         var message = (string)response["message"] ?? "적용 완료";
                         SetStatus($"{message} ({DateTime.Now:HH:mm:ss}, 문구 {updated}개 갱신)");
+                        ReportProfileFixes(response);
                         Logger.LogInfo($"settings applied: {message}, {updated} locale entries merged");
                     });
                 }
@@ -266,6 +271,19 @@ namespace QuestTweaksLive
             {
                 _suppress = false;
             }
+        }
+
+        // returns true when the server changed already received quests (status updated)
+        private bool ReportProfileFixes(JObject response)
+        {
+            var fixes = response["profileFixes"]?.Value<int>() ?? 0;
+            if (fixes <= 0)
+            {
+                return false;
+            }
+            SetStatus($"이미 받은 퀘스트 {fixes}건 수정됨 — 게임 재시작 후 반영 ({DateTime.Now:HH:mm:ss})");
+            Logger.LogInfo($"server updated {fixes} entries of already received quests; restart the game to see them");
+            return true;
         }
 
         private void ApplyTagStyle()
@@ -426,6 +444,10 @@ namespace QuestTweaksLive
                 "주의: 목표를 순서와 다르게 완료할 수 있고, 끈 뒤에도 진행 중인 퀘스트에는 공개 상태가 남는다.", order--);
             Bool(qol, "알 수 없는 보상 공개", "QualityOfLife", "revealUnknownRewards", false, "\"알 수 없는 보상\"을 실제 아이템으로 보여준다.", order--);
             Bool(qol, "퀘스트 대기 시간 제거", "QualityOfLife", "removeTimeGates", false, "건스미스 등 일부 퀘스트 사이의 대기 시간을 없앤다.", order--);
+            Bool(qol, "이미 받은 퀘스트에도 적용", "QualityOfLife", "applyToExistingProgress", false,
+                "켜면 이미 받아둔 일일/주간 퀘스트, 이미 돌고 있는 퀘스트 대기 시간, 잠김으로 저장된 등대지기/컬렉터 시작 퀘스트에도 " +
+                "켜져 있는 완화를 적용한다. 저장 데이터(프로필)를 직접 고치므로 되돌릴 수 없다 — 고치기 전에 서버 모드 폴더의 " +
+                "backups에 프로필 백업을 남긴다. 게임 재시작 후 반영.", order--);
 
             order = 100;
             Int(special, "등대지기 레벨 조건", "SpecialCases", "lightkeeperOnlyRequireLevel", 0, 0, 79,

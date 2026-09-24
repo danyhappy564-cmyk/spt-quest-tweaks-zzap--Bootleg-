@@ -3,7 +3,8 @@
         "revealAllQuestObjectives": false,
         "revealUnknownRewards": false,
         "removeTimeGates": false,
-        "showRelaxedTag": true
+        "showRelaxedTag": true,
+        "applyToExistingProgress": false
     },
     "GlobalConditions": {
         "removeTarget": false,

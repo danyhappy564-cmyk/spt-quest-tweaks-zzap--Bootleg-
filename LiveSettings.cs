@@ -44,6 +44,10 @@ public record LiveSettingsResponse
     // Objective id -> relaxed labels; the client appends "[퀘스트 완화됨: ...]" when displaying.
     [JsonPropertyName("tags")]
     public Dictionary<string, string>? Tags { get; set; }
+
+    // Changes made to already received quests in the profile by this call (game restart needed to see them).
+    [JsonPropertyName("profileFixes")]
+    public int ProfileFixes { get; set; }
 }
 
 [Injectable(InjectionType.Singleton)]
@@ -66,11 +70,19 @@ public class LiveSettingsService(
                 logger.Info("[QuestTweaks] quests added by other mods detected, quest tweaks re-applied");
             }
 
-            return new LiveSettingsResponse { Ok = true, Settings = Current(), Tags = questTweaks.GetTagLabels(sessionId) };
+            var fixes = questTweaks.FixProfile(sessionId);
+            return new LiveSettingsResponse { Ok = true, Settings = Current(), ProfileFixes = fixes, Tags = questTweaks.GetTagLabels(sessionId) };
         }
     }
 
-    public LiveSettingsResponse Tags(MongoId sessionId) => new() { Ok = true, Tags = questTweaks.GetTagLabels(sessionId) };
+    public LiveSettingsResponse Tags(MongoId sessionId)
+    {
+        lock (_lock)
+        {
+            var fixes = questTweaks.FixProfile(sessionId);
+            return new LiveSettingsResponse { Ok = true, ProfileFixes = fixes, Tags = questTweaks.GetTagLabels(sessionId) };
+        }
+    }
 
     public LiveSettingsResponse Set(LiveSettings request, MongoId sessionId)
     {
@@ -101,6 +113,7 @@ public class LiveSettingsService(
             }
 
             var localeChanges = questTweaks.Apply();
+            var fixes = questTweaks.FixProfile(sessionId);
             logger.Info("[QuestTweaks] settings changed from F12 menu, quest tweaks re-applied");
 
             return new LiveSettingsResponse
@@ -109,6 +122,7 @@ public class LiveSettingsService(
                 Message = message,
                 Settings = Current(),
                 LocaleChanges = localeChanges,
+                ProfileFixes = fixes,
                 Tags = questTweaks.GetTagLabels(sessionId)
             };
         }

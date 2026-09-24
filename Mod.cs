@@ -9,6 +9,8 @@ using SPTarkov.Server.Core.Models.Spt.Tables;
 using SPTarkov.Common.Models.Logging;
 using SPTarkov.Server.Core.Helpers.Profile;
 using SPTarkov.Server.Core.Models.Eft.Common;
+using SPTarkov.Server.Core.Models.Eft.Profile;
+using SPTarkov.Server.Core.Servers;
 using SPTarkov.Server.Core.Utils;
 using SPTarkov.Server.Core.Utils.Cloners;
 using SPTarkov.Server.Core.Utils.Collections;
@@ -61,12 +63,12 @@ public class Mod(QuestTweaksService service) : IOnLoad
 /// </summary>
 [Injectable(InjectionType.Singleton)]
 public class QuestTweaksService(
-#if DEBUG
     JsonUtil json,
-#endif
     ISptLogger<QuestTweaksService> logger,
     ICloner cloner,
     ProfileHelper profileHelper,
+    SaveServer saveServer,
+    TimeUtil timeUtil,
     Config config,
     QuestConfig questConfig,
     TemplateTable templates,
@@ -255,6 +257,169 @@ public class QuestTweaksService(
             labels.Add("거리 무관");
         }
         return labels;
+    }
+
+    /// <summary>
+    /// Opt-in (QualityOfLife.applyToExistingProgress): some relaxations only reach data created after
+    /// they were turned on, because the value was copied into the profile. Fix those copies in the
+    /// player's profile: running quest wait timers, already generated repeatables, and a stored
+    /// "Locked" status on Lightkeeper/Collector. Backs the profile up first. Not reversible.
+    /// Returns the number of changes made.
+    /// </summary>
+    public int FixProfile(MongoId sessionId)
+    {
+        if (!config.QualityOfLife.ApplyToExistingProgress || sessionId.IsEmpty)
+        {
+            return 0;
+        }
+
+        lock (_lock)
+        {
+            SptProfile? profile;
+            try
+            {
+                profile = saveServer.GetProfile(sessionId);
+            }
+            catch (Exception ex)
+            {
+                logger.Debug($"[QuestTweaks] no profile for {sessionId}: {ex.Message}");
+                return 0;
+            }
+
+            var pmc = profile?.CharacterData?.PmcData;
+            if (pmc is null)
+            {
+                return 0;
+            }
+
+            var fixes = CollectProfileFixes(pmc, timeUtil.GetTimeStamp());
+            if (fixes.Count == 0)
+            {
+                return 0;
+            }
+
+            try
+            {
+                var backupDir = Path.Join(_modDir, "backups");
+                Directory.CreateDirectory(backupDir);
+                var backupFile = Path.Join(backupDir, $"{sessionId}-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+                File.WriteAllText(backupFile, json.Serialize(profile, true));
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"[QuestTweaks] profile backup failed, existing quests left untouched: {ex.Message}");
+                return 0;
+            }
+
+            foreach (var (description, apply) in fixes)
+            {
+                apply();
+                logger.Info($"[QuestTweaks] existing progress: {description}");
+            }
+
+            try
+            {
+                saveServer.SaveProfileAsync(sessionId).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                logger.Warning($"[QuestTweaks] profile save failed (changes stay in memory until the next save): {ex.Message}");
+            }
+
+            return fixes.Count;
+        }
+    }
+
+    public List<(string Description, Action Apply)> CollectProfileFixes(PmcData pmc, long now)
+    {
+        List<(string, Action)> fixes = [];
+
+        if (config.QualityOfLife.RemoveTimeGates)
+        {
+            foreach (var status in pmc.Quests ?? [])
+            {
+                if ((status.Status == QuestStatusEnum.AvailableAfter) && (status.AvailableAfter > now))
+                {
+                    var s = status;
+                    fixes.Add(($"wait timer cleared for quest {s.QId}", () => s.AvailableAfter = now));
+                }
+            }
+        }
+
+        void Unlock(MongoId questId, bool enabled)
+        {
+            var locked = pmc.Quests?.FirstOrDefault(q => (q.QId == questId) && (q.Status == QuestStatusEnum.Locked));
+            if (enabled && (locked is not null))
+            {
+                fixes.Add(($"stored Locked status removed for quest {questId}", () => pmc.Quests!.Remove(locked)));
+            }
+        }
+        Unlock(QuestTpl.NETWORK_PROVIDER_PART_1, config.SpecialCases.LightkeeperOnlyRequireLevel > 0);
+        Unlock(QuestTpl.COLLECTOR, config.SpecialCases.CollectorPrerequisiteBackport);
+
+        if (!config.GlobalConditions.AffectRepeatables)
+        {
+            return fixes;
+        }
+
+        foreach (var group in pmc.RepeatableQuests ?? [])
+        {
+            var configId = questConfig.RepeatableQuests.FirstOrDefault(c => c.Name == group.Name)?.Id ?? group.Id;
+            if (configId is null)
+            {
+                continue;
+            }
+            var cfg = configId.Value;
+
+            foreach (var quest in group.ActiveQuests ?? [])
+            {
+                foreach (var objective in quest.Conditions?.AvailableForFinish ?? [])
+                {
+                    var o = objective;
+                    if ((o.ConditionType == "HandoverItem" || o.ConditionType == "FindItem")
+                        && ShouldModifyCondition(cfg, "RemoveFindInRaid") && (o.OnlyFoundInRaid == true))
+                    {
+                        fixes.Add(($"FIR removed from repeatable objective {o.Id}", () => o.OnlyFoundInRaid = false));
+                    }
+
+                    var kills = o.Counter?.Conditions?.FirstOrDefault(c => c.ConditionType == "Kills");
+                    if (kills is null)
+                    {
+                        continue;
+                    }
+
+                    if (ShouldModifyCondition(cfg, "RemoveBodyPart") && (kills.BodyPart?.Count > 0))
+                    {
+                        fixes.Add(($"body part removed from repeatable objective {o.Id}", () => kills.BodyPart!.Clear()));
+                    }
+                    if (ShouldModifyCondition(cfg, "RemoveWeapon") && ((kills.Weapon?.Count > 0) || (kills.WeaponCaliber?.Count > 0)))
+                    {
+                        fixes.Add(($"weapon removed from repeatable objective {o.Id}", () =>
+                        {
+                            kills.Weapon?.Clear();
+                            kills.WeaponCaliber?.Clear();
+                        }));
+                    }
+                    if (ShouldModifyCondition(cfg, "RemoveDistance") && (kills.Distance?.Value > 0))
+                    {
+                        fixes.Add(($"distance removed from repeatable objective {o.Id}", () =>
+                            kills.Distance = new CounterConditionDistance { CompareMethod = ">=", Value = 0 }));
+                    }
+                    if (ShouldModifyCondition(cfg, "RemoveTarget")
+                        && ((kills.SavageRole?.Count > 0) || (kills.Target?.List?.Count > 0)
+                            || ((kills.Target?.Item is not null) && (kills.Target.Item != "Any"))))
+                    {
+                        fixes.Add(($"target removed from repeatable objective {o.Id}", () =>
+                        {
+                            kills.SavageRole?.Clear();
+                            kills.Target = new ListOrT<string>(null, "Any");
+                        }));
+                    }
+                }
+            }
+        }
+
+        return fixes;
     }
 
     private void AddTag(string objectiveId, string label)

@@ -47,6 +47,11 @@ public record QualityOfLifeConfig
     // Append "[퀘스트 완화됨: ...]" to the Korean text of every objective that was actually relaxed.
     [JsonPropertyName("showRelaxedTag")]
     public bool ShowRelaxedTag { get; set; } = true;
+
+    // Also fix copies of relaxed values already stored in the profile (running wait timers,
+    // generated dailies/weeklies, stored Locked status). Irreversible, so off by default.
+    [JsonPropertyName("applyToExistingProgress")]
+    public bool ApplyToExistingProgress { get; set; }
 }
 
 public record ConditionsConfig

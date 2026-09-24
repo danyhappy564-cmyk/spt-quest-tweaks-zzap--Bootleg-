@@ -16,7 +16,7 @@ namespace QuestTweaksLive
     /// The server's config.json is the source of truth: on start the plugin pulls it, and every
     /// change made in F12 is pushed back, saved to config.json and re-applied without a restart.
     /// </summary>
-    [BepInPlugin(Guid, "Quest Tweaks Live (F12)", "1.3.0")]
+    [BepInPlugin(Guid, "Quest Tweaks Live (F12)", "1.4.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "com.zzap.questtweaks.live";
@@ -32,6 +32,7 @@ namespace QuestTweaksLive
         private ConfigEntry<string> _tagColor;
         private ConfigEntry<bool> _tagNewLine;
         private ConfigEntry<int> _tagSize;
+        private ConfigEntry<TagAlign> _tagAlign;
         private DateTime _nextTagRefresh;
 
         private bool _synced;
@@ -97,7 +98,7 @@ namespace QuestTweaksLive
         private void OnSettingChanged(object sender, SettingChangedEventArgs e)
         {
             if (_suppress || e.ChangedSetting == _status || e.ChangedSetting == _tagColor
-                || e.ChangedSetting == _tagNewLine || e.ChangedSetting == _tagSize)
+                || e.ChangedSetting == _tagNewLine || e.ChangedSetting == _tagSize || e.ChangedSetting == _tagAlign)
             {
                 return;
             }
@@ -271,6 +272,9 @@ namespace QuestTweaksLive
         {
             RelaxedTagPatch.NewLine = _tagNewLine.Value;
             RelaxedTagPatch.SizePercent = _tagSize.Value;
+            RelaxedTagPatch.Align = _tagAlign.Value == TagAlign.중앙 ? "center"
+                : _tagAlign.Value == TagAlign.오른쪽 ? "right"
+                : null;
         }
 
         private void ApplyTagColor()
@@ -383,7 +387,11 @@ namespace QuestTweaksLive
             _tagSize = Config.Bind(display, "완화 표시 글자 크기(%)", 90,
                 new ConfigDescription("목표 문구 대비 완화 표시 글자 크기. 100 = 같은 크기.", new AcceptableValueRange<int>(50, 150),
                     new ConfigurationManagerAttributes { Order = order-- }));
+            _tagAlign = Config.Bind(display, "완화 표시 위치", TagAlign.왼쪽,
+                new ConfigDescription("줄바꿈이 켜져 있을 때 완화 표시 줄의 가로 위치.", null,
+                    new ConfigurationManagerAttributes { Order = order-- }));
             ApplyTagStyle();
+            _tagAlign.SettingChanged += (sender, args) => ApplyTagStyle();
             _tagNewLine.SettingChanged += (sender, args) => ApplyTagStyle();
             _tagSize.SettingChanged += (sender, args) => ApplyTagStyle();
 
@@ -468,6 +476,14 @@ namespace QuestTweaksLive
                 Entry = entry;
             }
         }
+    }
+
+    // shown as a dropdown in F12
+    public enum TagAlign
+    {
+        왼쪽,
+        중앙,
+        오른쪽
     }
 
     // Read by BepInEx ConfigurationManager through reflection (field names matter).

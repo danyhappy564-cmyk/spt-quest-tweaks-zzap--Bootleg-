@@ -32,6 +32,9 @@ namespace QuestTweaksLive
         // TextMeshPro size of the tag in percent; 100 = same as the objective text
         public static volatile int SizePercent = 90;
 
+        // horizontal position of the tag line (only when NewLine is on); null = left, the default
+        public static volatile string Align;
+
         public static void Apply(Harmony harmony)
         {
             harmony.Patch(
@@ -129,7 +132,16 @@ namespace QuestTweaksLive
             {
                 tag = "<size=" + size + "%>" + tag + "</size>";
             }
-            return text + (NewLine ? "\n" : " ") + tag;
+            if (!NewLine)
+            {
+                return text + " " + tag;
+            }
+
+            // <align> applies to the line it starts on, so only the tag line moves
+            var align = Align;
+            return string.IsNullOrEmpty(align)
+                ? text + "\n" + tag
+                : text + "\n<align=" + align + ">" + tag + "</align>";
         }
     }
 }

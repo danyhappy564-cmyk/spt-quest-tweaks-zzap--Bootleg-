@@ -34,7 +34,19 @@
         SourceFiles="README.md"
         DestinationFiles="$(ModDir)\README_KR.md"/>
   </Target>
-  <!-- F12 live-settings client plugin: build client/ first (see README) and it is packed alongside -->
+  <!-- F12 live-settings client plugin: built automatically when the game files are found -->
+  <PropertyGroup>
+    <SptRoot Condition="'$(SptRoot)' == ''">E:\SPT 4.1</SptRoot>
+  </PropertyGroup>
+  <Target Name="BuildClientPlugin" BeforeTargets="BuildDist" Condition="Exists('$(SptRoot)\BepInEx\core\BepInEx.dll')">
+    <MSBuild Projects="client\QuestTweaksLive.csproj" Targets="Restore"
+             Properties="Configuration=$(Configuration);SptRoot=$(SptRoot);_RestoreRun=$([System.Guid]::NewGuid())" />
+    <MSBuild Projects="client\QuestTweaksLive.csproj" Targets="Build"
+             Properties="Configuration=$(Configuration);SptRoot=$(SptRoot)" />
+  </Target>
+  <Target Name="WarnNoClientPlugin" BeforeTargets="BuildDist" Condition="!Exists('$(SptRoot)\BepInEx\core\BepInEx.dll')">
+    <Warning Text="F12 plugin (QuestTweaksLive.dll) not built: game files not found at '$(SptRoot)'. Build with -p:SptRoot=&quot;your SPT folder&quot;." />
+  </Target>
   <Target Name="CopyClientPlugin" AfterTargets="BuildDist" Condition="Exists('client\bin\$(Configuration)\QuestTweaksLive.dll')">
     <Copy
         SourceFiles="client\bin\$(Configuration)\QuestTweaksLive.dll"

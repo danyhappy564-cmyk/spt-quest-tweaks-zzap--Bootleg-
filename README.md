@@ -15,6 +15,10 @@
 
 ## 변경 이력
 
+- 2026-10-09 16:01 (KST) — **서버 모드만 빌드해도 F12 플러그인이 같이 빌드되게 함.** 전에는 `client` 폴더를 따로 먼저
+  빌드해야 했고, 솔루션(.sln)이나 서버 프로젝트만 빌드하면 zip에 `QuestTweaksLive.dll`이 빠졌다. 이제 `E:\SPT 4.1`에
+  게임 파일이 있으면 자동으로 같이 빌드해서 zip에 넣는다. 게임 폴더가 다르면 `-p:SptRoot="게임 폴더"`, 못 찾으면
+  빌드 경고로 알려준다(서버 모드는 정상 빌드).
 - 2026-10-09 11:54 (KST) — **원본 모드 최신판(4.9.0, 2026-10-06까지 16개 커밋) 병합.** 포크 버전 4.11.0,
   F12 플러그인 1.6.0. 기존 기능(완화 표시·F12 실시간 설정·이미 받은 퀘스트에도 적용)은 그대로 유지.
   원본에서 새로 들어온 것:
@@ -222,11 +226,9 @@ zip을 SPT 폴더(`E:\SPT 4.1`)에 그대로 풀면 된다.
 ## 직접 빌드
 
 ```
-cd client
-dotnet build -c Release -p:SptRoot="E:\SPT 4.1"
-cd ..
 dotnet build -c Release
 ```
 
-클라 플러그인을 먼저 빌드하면 서버 빌드가 만드는 `dist\sgtlaggyQuestTweaks-<버전>.zip`에
-`BepInEx\plugins\QuestTweaksLive.dll`이 같이 들어간다.
+`E:\SPT 4.1`(다른 위치면 `-p:SptRoot="게임 폴더"`)에서 게임 파일을 찾으면 F12 플러그인도 같이 빌드돼
+`dist\sgtlaggyQuestTweaks-<버전>.zip`의 `BepInEx\plugins\QuestTweaksLive.dll`로 들어간다.
+못 찾으면 서버 모드만 빌드되고 `F12 plugin (QuestTweaksLive.dll) not built` 경고가 뜬다.

@@ -1,6 +1,7 @@
 ﻿using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Helpers.Server;
@@ -15,34 +16,146 @@ namespace sgtlaggyQuestTweaks;
 public record Config
 {
     [JsonPropertyName("QualityOfLife")]
-    public required QualityOfLifeConfig QualityOfLife { get; set; }
+    public QualityOfLifeConfig QualityOfLife { get; set; } = new();
 
     [JsonPropertyName("GlobalConditions")]
-    public required GlobalConditionsConfig GlobalConditions { get; set; }
+    public GlobalConditionsConfig GlobalConditions { get; set; } = new();
 
     [JsonPropertyName("SpecialCases")]
-    public required SpecialCasesConfig SpecialCases { get; set; }
+    public SpecialCasesConfig SpecialCases { get; set; } = new();
 
     [JsonPropertyName("exemptQuests")]
-    public required HashSet<MongoId> ExemptQuests { get; set; }
+    public HashSet<MongoId> ExemptQuests { get; set; } = [];
 
     [JsonPropertyName("onlyQuests")]
-    public required HashSet<MongoId> OnlyQuests { get; set; }
+    public HashSet<MongoId> OnlyQuests { get; set; } = [];
 
     [JsonPropertyName("questOverrides")]
-    public required Dictionary<MongoId, ConditionsConfig> QuestOverrides { get; set; }
+    public Dictionary<MongoId, ConditionsConfig> QuestOverrides { get; set; } = [];
+
+    [JsonPropertyName("debug")]
+    public bool Debug { get; set; } = false;
+
+    public void FillDefaultGlobalConditions()
+    {
+        var conditionProps = typeof(ConditionsConfig).GetProperties()
+            .Where((prop) => (prop.GetCustomAttribute(typeof(JsonPropertyNameAttribute)) is not null));
+        foreach (var prop in conditionProps)
+        {
+            if (prop.GetValue(GlobalConditions) is null)
+            {
+                prop.SetValue(GlobalConditions, GetDefaultValue(prop));
+            }
+        }
+    }
+
+    public bool IsQuestExempt(MongoId questId)
+    {
+        if ((OnlyQuests.Count > 0) && !OnlyQuests.Contains(questId))
+        {
+            return true;
+        }
+        if (ExemptQuests.Contains(questId))
+        {
+            return true;
+        }
+        return false;
+    }
+
+    public ConditionsConfig GetConditionsWithOverrides(MongoId questId)
+    {
+        ConditionsConfig conditions = new();
+
+        ConditionsConfig? questOverride;
+        QuestOverrides.TryGetValue(questId, out questOverride);
+
+        var properties = typeof(ConditionsConfig).GetProperties()
+            .Where((prop) => (prop.GetCustomAttribute(typeof(JsonPropertyNameAttribute)) is not null));
+        foreach (var prop in properties)
+        {
+            if (questOverride is not null)
+            {
+                var overrideValue = prop.GetValue(questOverride);
+                if (overrideValue is not null)
+                {
+                    prop.SetValue(conditions, overrideValue);
+                    continue;
+                }
+            }
+
+            if (IsQuestExempt(questId))
+            {
+                prop.SetValue(conditions, GetDefaultValue(prop));
+                continue;
+            }
+
+            prop.SetValue(conditions, prop.GetValue(GlobalConditions) ?? GetDefaultValue(prop));
+        }
+
+        return conditions;
+    }
+
+    private static object? GetDefaultValue(PropertyInfo property)
+    {
+        var type = property.PropertyType;
+        if (type == typeof(bool?))
+        {
+            return false;
+        }
+        else if (type == typeof(int?))
+        {
+            return -1;
+        }
+        return null;
+    }
+
+    public double? GetNewObjectiveValue(ConditionsConfig config, string condition, double? original)
+    {
+        if (original is null)
+        {
+            return null;
+        }
+
+        var absoluteProp = typeof(ConditionsConfig).GetProperty($"{condition}Count")!;
+        var percentProp = typeof(ConditionsConfig).GetProperty($"{condition}Percent")!;
+
+        int? absolute;
+        int? percent;
+
+        absolute = absoluteProp.GetValue(config) as int?;
+        if (absolute >= 0)
+        {
+            return absolute;
+        }
+
+        percent = percentProp.GetValue(config) as int?;
+        if (percent >= 0)
+        {
+            var value = Double.Round((original.Value * percent / 100).Value);
+            if (value == 0)
+            {
+                return 1;
+            }
+            else
+            {
+                return value;
+            }
+        }
+
+        return original;
+    }
 }
 
 public record QualityOfLifeConfig
 {
     [JsonPropertyName("revealAllQuestObjectives")]
-    public bool RevealAllQuestObjectives { get; set; }
+    public bool RevealAllQuestObjectives { get; set; } = false;
 
     [JsonPropertyName("revealUnknownRewards")]
-    public bool RevealUnknownRewards { get; set; }
+    public bool RevealUnknownRewards { get; set; } = false;
 
     [JsonPropertyName("removeTimeGates")]
-    public bool RemoveTimeGates { get; set; }
+    public bool RemoveTimeGates { get; set; } = false;
 
     // Append "[퀘스트 완화됨: ...]" to the Korean text of every objective that was actually relaxed.
     [JsonPropertyName("showRelaxedTag")]
@@ -95,6 +208,15 @@ public record ConditionsConfig
     [JsonPropertyName("removeFindInRaid")]
     public bool? RemoveFindInRaid { get; set; }
 
+    [JsonPropertyName("removeInOneRaid")]
+    public bool? RemoveInOneRaid { get; set; }
+
+    [JsonPropertyName("removeTransit")]
+    public bool? RemoveTransit { get; set; }
+
+    [JsonPropertyName("removeSurviveAfter")]
+    public bool? RemoveSurviveAfter { get; set; }
+
     [JsonPropertyName("handoverItemCount")]
     public int? HandoverItemCount { get; set; }
 
@@ -106,6 +228,24 @@ public record ConditionsConfig
 
     [JsonPropertyName("eliminationPercent")]
     public int? EliminationPercent { get; set; }
+
+    [JsonPropertyName("plantItemCount")]
+    public int? PlantItemCount { get; set; }
+
+    [JsonPropertyName("plantItemPercent")]
+    public int? PlantItemPercent { get; set; }
+
+    [JsonPropertyName("plantItemTime")]
+    public int? PlantItemTime { get; set; }
+
+    [JsonPropertyName("placeProtectCount")]
+    public int? PlaceProtectCount { get; set; }
+
+    [JsonPropertyName("placeProtectPercent")]
+    public int? PlaceProtectPercent { get; set; }
+
+    [JsonPropertyName("placeProtectTime")]
+    public int? PlaceProtectTime { get; set; }
 
     [JsonIgnore]
     public bool AnyChanged
@@ -123,32 +263,42 @@ public record ConditionsConfig
                || (RemoveMap ?? false)
                || (RemoveZone ?? false)
                || (RemoveFindInRaid ?? false)
+               || (RemoveInOneRaid ?? false)
+               || (RemoveTransit ?? false)
+               || (RemoveSurviveAfter ?? false)
                || (HandoverItemCount >= 0)
                || (HandoverItemPercent >= 0)
                || (EliminationCount >= 0)
-               || (EliminationPercent >= 0);
+               || (EliminationPercent >= 0)
+               || (PlantItemCount >= 0)
+               || (PlantItemPercent >= 0)
+               || (PlantItemTime >= 0)
+               || (PlaceProtectCount >= 0)
+               || (PlaceProtectPercent >= 0)
+               || (PlaceProtectTime >= 0);
     }
 }
 
 public record GlobalConditionsConfig : ConditionsConfig
 {
     [JsonPropertyName("affectRepeatables")]
-    public bool AffectRepeatables { get; set; }
+    public bool AffectRepeatables { get; set; } = true;
 }
 
 public record SpecialCasesConfig
 {
     [JsonPropertyName("lightkeeperOnlyRequireLevel")]
-    public int LightkeeperOnlyRequireLevel { get; set; }
+    public int LightkeeperOnlyRequireLevel { get; set; } = 0;
 
     [JsonPropertyName("tarkovShooterM10")]
-    public bool TarkovShooterM10 { get; set; }
+    public bool TarkovShooterM10 { get; set; } = false;
 
     [JsonPropertyName("collectorPrerequisiteBackport")]
-    public bool CollectorPrerequisiteBackport { get; set; }
+    public bool CollectorPrerequisiteBackport { get; set; } = false;
 }
 
-public class ConfigRegistration : IOnDIConstruct
+[Injectable(TypePriority = OnLoadOrder.Preload + 1)]
+public class ConfigRegistration(ISptLogger<ConfigRegistration> logger) : IOnDIConstruct, IOnLoad
 {
     public static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -159,12 +309,14 @@ public class ConfigRegistration : IOnDIConstruct
         Converters = { new StringToMongoIdConverter() }
     };
 
-    public static string ConfigPath =>
-        Path.Join(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "config.json");
+    private static string ModDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
+    public static string FilePath = Path.Join(ModDir, "config.json");
+
+    private static Exception? Error = default;
 
     public static void Save(Config config)
     {
-        File.WriteAllText(ConfigPath, JsonSerializer.Serialize(config, JsonOptions) + Environment.NewLine);
+        File.WriteAllText(FilePath, JsonSerializer.Serialize(config, JsonOptions) + Environment.NewLine);
     }
 
     public static async Task OnDIConstructAsync(
@@ -172,10 +324,40 @@ public class ConfigRegistration : IOnDIConstruct
         CancellationToken cancellationToken
     )
     {
-        var configJson = await File.ReadAllTextAsync(ConfigPath, cancellationToken);
-        var config = JsonSerializer.Deserialize<Config>(configJson, JsonOptions)!;
+        Config? config;
+        try
+        {
+            var configJson = await File.ReadAllTextAsync(FilePath, cancellationToken);
+            config = JsonSerializer.Deserialize<Config>(configJson, JsonOptions);
+            if (config is null)
+            {
+                throw new FileNotFoundException("Loaded config is null.");
+            }
+        }
+        catch (FileNotFoundException)
+        {
+            config = new();
+            config.FillDefaultGlobalConditions();
+            await File.WriteAllTextAsync(FilePath, JsonSerializer.Serialize(config, JsonOptions), cancellationToken);
+        }
+        catch (Exception e)
+        {
+            config = new();
+            Error = e;
+        }
 
+        config.FillDefaultGlobalConditions();
         serviceCollection.AddSingleton(config);
+    }
+
+    public Task OnLoadAsync(CancellationToken cancellationToken)
+    {
+        if (Error is not null)
+        {
+            logger.Error("[QuestTweaks] Error loading config.", Error);
+        }
+
+        return Task.CompletedTask;
     }
 }
 
@@ -190,7 +372,7 @@ public class ConfigEditorProvider(Config config, ModHelper modHelper) : IConfigE
             metadata.ModGuid,
             metadata.Name,
             config,
-            Path.Combine(modDir, "config.json")
+            ConfigRegistration.FilePath
         );
     }
 }

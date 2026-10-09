@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Models.Common;
@@ -6,7 +7,6 @@ using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Models.Spt.Config;
 using SPTarkov.Server.Core.Models.Spt.Tables;
-using SPTarkov.Common.Models.Logging;
 using SPTarkov.Server.Core.Helpers.Profile;
 using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Models.Eft.Profile;
@@ -120,15 +120,29 @@ public class QuestTweaksService(
             _relaxTags.Clear();
 
             var allQuests = templates.Quests;
-            ModifySpecialCaseQuests(allQuests);
-            ModifyQuestsNonExemptSettings(allQuests);
-            ModifyQuestConditions(allQuests);
 
-#if DEBUG
-            // Dump modified quest database to a file for quick inspection in debug builds.
-            var dumpFile = Path.Join(_modDir, "dump.json");
-            File.WriteAllText(dumpFile, json.Serialize(allQuests, true));
-#endif
+            if (config.Debug)
+            {
+                var filename = Path.Join(_modDir, "quests_before.json");
+                File.WriteAllText(filename, json.Serialize(allQuests, true));
+            }
+
+            try
+            {
+                ModifySpecialCaseQuests(allQuests);
+                ModifyQuestsNonExemptSettings(allQuests);
+                ModifyQuestConditions(allQuests);
+            }
+            catch (Exception e)
+            {
+                logger.Error($"[QuestTweaks] Error modifying quests.", e);
+            }
+
+            if (config.Debug)
+            {
+                var filename = Path.Join(_modDir, "quests_after.json");
+                File.WriteAllText(filename, json.Serialize(allQuests, true));
+            }
 
             return ApplyLocaleTags();
         }
@@ -670,6 +684,22 @@ public class QuestTweaksService(
         }
     }
 
+    private bool CounterConditionIsOnlyTransit(QuestConditionCounterCondition condition)
+    {
+        return (condition.ConditionType == "ExitStatus")
+               && (condition.Status?.Count == 1)
+               && condition.Status.Contains("Transit");
+    }
+
+    private bool ObjectiveIsSingleSurvive(QuestCondition objective)
+    {
+        return (objective.ConditionType == "CounterCreator")
+               && (objective.Value == 1)
+               && (objective.Counter?.Conditions?.Any(
+                   (cond) => ((cond.ConditionType == "ExitStatus")
+                              && (cond.Status?.Contains("Survived") ?? false))) ?? false);
+    }
+
     private void ModifyQuestConditions(Dictionary<MongoId, Quest> quests)
     {
         var shouldModifyConditions = config.GlobalConditions.AnyChanged
@@ -716,12 +746,34 @@ public class QuestTweaksService(
         foreach (var (questId, quest) in quests)
         {
             var objectives = quest.Conditions.AvailableForFinish!;
+            var conditions = config.GetConditionsWithOverrides(questId);
+
+            if (conditions.RemoveTransit!.Value && !conditions.RemoveInOneRaid!.Value)
+            {
+                conditions.RemoveInOneRaid = (
+                    (quest.Location == "marathon") // explicitly marked as transit task
+                    || (objectives.Any(
+                        (obj) => (
+                            (obj.ConditionType == "CounterCreator")
+                            && (obj.Counter?.Conditions?.Any(CounterConditionIsOnlyTransit) ?? false)
+                        )
+                    ))
+                );
+            }
+
+            HashSet<MongoId> objectivesToRemove = [];
 
             foreach (var objective in objectives)
             {
+                if ((objective.OneSessionOnly ?? false) && conditions.RemoveInOneRaid!.Value)
+                {
+                    AddTag(objective.Id, "한 판 제한 없음");
+                    objective.OneSessionOnly = false;
+                }
+
                 if (objective.ConditionType == "HandoverItem" || objective.ConditionType == "FindItem")
                 {
-                    if (ShouldModifyCondition(questId, "RemoveFindInRaid"))
+                    if (conditions.RemoveFindInRaid!.Value)
                     {
                         if (objective.OnlyFoundInRaid == true)
                         {
@@ -730,27 +782,29 @@ public class QuestTweaksService(
                         objective.OnlyFoundInRaid = false;
                     }
 
-                    TemplateItem? item;
-                    if (objective.Target!.IsList)
+                    if (!ObjectiveTargetItemIsQuestOrSpecial(objective))
                     {
-                        items.TryGetValue(objective.Target.List![0], out item);
+                        SetObjectiveValue(objective, conditions, "HandoverItem", "수량", objectivesToRemove);
                     }
-                    else
-                    {
-                        items.TryGetValue(objective.Target.Item!, out item);
-                    }
+                }
 
-                    if ((item is not null)
-                        && (item.Properties!.QuestItem != true)
-                        && !Constants.KeyClasses.Contains(item.Parent)
-                        && !Constants.HandoverCountItemBlacklist.Contains(item.Id))
+                if (objective.ConditionType == "LeaveItemAtLocation")
+                {
+                    SetPlantTime(objective, conditions.PlantItemTime);
+
+                    if (!ObjectiveTargetItemIsQuestOrSpecial(objective))
                     {
-                        var oldValue = objective.Value;
-                        objective.Value = GetNewObjectiveValue(questId, "HandoverItem", objective.Value);
-                        if (objective.Value != oldValue)
-                        {
-                            AddTag(objective.Id, $"수량 {oldValue}→{objective.Value}");
-                        }
+                        SetObjectiveValue(objective, conditions, "PlantItem", "수량", objectivesToRemove);
+                    }
+                }
+
+                if (objective.ConditionType == "PlaceBeacon")
+                {
+                    SetPlantTime(objective, conditions.PlaceProtectTime);
+
+                    if (!ObjectiveTargetItemIsQuestOrSpecial(objective))
+                    {
+                        SetObjectiveValue(objective, conditions, "PlaceProtect", "수량", objectivesToRemove);
                     }
                 }
 
@@ -759,7 +813,14 @@ public class QuestTweaksService(
                     continue;
                 }
 
-                if (ShouldModifyCondition(questId, "RemoveZone") && !ShouldModifyCondition(questId, "RemoveMap"))
+                if (conditions.RemoveTransit!.Value
+                    && (objective.Counter?.Conditions?.Any(CounterConditionIsOnlyTransit) ?? false)
+                )
+                {
+                    objectivesToRemove.Add(objective.Id);
+                }
+
+                if (conditions.RemoveZone!.Value && !conditions.RemoveMap!.Value)
                 {
                     var zoneCond = objective.Counter!.Conditions!.Find(
                         cond => cond.ConditionType == "InZone");
@@ -793,19 +854,19 @@ public class QuestTweaksService(
                 objective.Counter!.Conditions!.RemoveAll(cond =>
                 {
                     string? label = null;
-                    if (ShouldModifyCondition(questId, "RemoveSelfHealthEffect") && (cond.ConditionType == "HealthEffect"))
+                    if (conditions.RemoveSelfHealthEffect!.Value && (cond.ConditionType == "HealthEffect"))
                     {
                         label = "본인 상태 무관";
                     }
-                    else if (ShouldModifyCondition(questId, "RemoveSelfGear") && (cond.ConditionType == "Equipment"))
+                    else if (conditions.RemoveSelfGear!.Value && (cond.ConditionType == "Equipment"))
                     {
                         label = "착용 장비 무관";
                     }
-                    else if (ShouldModifyCondition(questId, "RemoveMap") && (cond.ConditionType == "Location"))
+                    else if (conditions.RemoveMap!.Value && (cond.ConditionType == "Location"))
                     {
                         label = "맵 무관";
                     }
-                    else if (ShouldModifyCondition(questId, "RemoveZone") && (cond.ConditionType == "InZone"))
+                    else if (conditions.RemoveZone!.Value && (cond.ConditionType == "InZone"))
                     {
                         label = "구역 무관";
                     }
@@ -824,11 +885,7 @@ public class QuestTweaksService(
                     || cond.ConditionType == "Location"
                     || cond.ConditionType == "InZone"))
                 {
-                    if (objective.Value != 0)
-                    {
-                        AddTag(objective.Id, "자동 완료");
-                    }
-                    objective.Value = 0;
+                    objectivesToRemove.Add(objective.Id);
                     continue;
                 }
 
@@ -841,13 +898,16 @@ public class QuestTweaksService(
                         continue;
                     }
 
-                    if ((config.GlobalConditions.EliminationCount >= 0 || config.GlobalConditions.EliminationPercent >= 0)
-                        && condition.ConditionType == "Kills")
+                    if (condition.ConditionType == "Kills")
                     {
-                        objective.Value = GetNewObjectiveValue(questId, "Elimination", objective.Value);
+                        objective.Value = config.GetNewObjectiveValue(conditions, "Elimination", objective.Value);
+                        if (objective.Value == 0)
+                        {
+                            objectivesToRemove.Add(objective.Id);
+                        }
                     }
 
-                    if (ShouldModifyCondition(questId, "RemoveTarget"))
+                    if (conditions.RemoveTarget!.Value)
                     {
                         if ((condition.SavageRole?.Count > 0)
                             || (condition.Target?.List?.Count > 0)
@@ -859,7 +919,7 @@ public class QuestTweaksService(
                         condition.Target = new ListOrT<string>(null, "Any");
                     }
 
-                    if (ShouldModifyCondition(questId, "RemoveWeapon"))
+                    if (conditions.RemoveWeapon!.Value)
                     {
                         if ((condition.Weapon?.Count > 0) || (condition.WeaponCaliber?.Count > 0))
                         {
@@ -869,7 +929,7 @@ public class QuestTweaksService(
                         condition.WeaponCaliber?.Clear();
                     }
 
-                    if (ShouldModifyCondition(questId, "RemoveWeaponMods"))
+                    if (conditions.RemoveWeaponMods!.Value)
                     {
                         if ((condition.WeaponModsExclusive?.Any() == true) || (condition.WeaponModsInclusive?.Any() == true))
                         {
@@ -879,7 +939,7 @@ public class QuestTweaksService(
                         condition.WeaponModsInclusive = [];
                     }
 
-                    if (ShouldModifyCondition(questId, "RemoveEnemyHealthEffect"))
+                    if (conditions.RemoveEnemyHealthEffect!.Value)
                     {
                         if (condition.EnemyHealthEffects?.Count > 0)
                         {
@@ -888,7 +948,7 @@ public class QuestTweaksService(
                         condition.EnemyHealthEffects?.Clear();
                     }
 
-                    if (ShouldModifyCondition(questId, "RemoveEnemyGear"))
+                    if (conditions.RemoveEnemyGear!.Value)
                     {
                         if ((condition.EnemyEquipmentExclusive?.Any() == true) || (condition.EnemyEquipmentInclusive?.Any() == true))
                         {
@@ -898,7 +958,7 @@ public class QuestTweaksService(
                         condition.EnemyEquipmentInclusive = [];
                     }
 
-                    if (ShouldModifyCondition(questId, "RemoveBodyPart"))
+                    if (conditions.RemoveBodyPart!.Value)
                     {
                         if (condition.BodyPart?.Count > 0)
                         {
@@ -907,7 +967,7 @@ public class QuestTweaksService(
                         condition.BodyPart?.Clear();
                     }
 
-                    if (ShouldModifyCondition(questId, "RemoveDistance"))
+                    if (conditions.RemoveDistance!.Value)
                     {
                         if (condition.Distance?.Value > 0)
                         {
@@ -920,7 +980,7 @@ public class QuestTweaksService(
                         };
                     }
 
-                    if (ShouldModifyCondition(questId, "RemoveTime") && (condition.Daytime is not null))
+                    if (conditions.RemoveTime!.Value && (condition.Daytime is not null))
                     {
                         if ((condition.Daytime.From != 0) || (condition.Daytime.To != 0))
                         {
@@ -939,6 +999,41 @@ public class QuestTweaksService(
                     AddTag(objective.Id, $"목표 {valueBeforeElimination}→{objective.Value}");
                 }
             }
+
+            if (objectivesToRemove.Count > 0)
+            {
+                objectives.RemoveAll((objective) => objectivesToRemove.Contains(objective.Id));
+
+                foreach (var objective in objectives)
+                {
+                    objective.VisibilityConditions?.RemoveAll(
+                        (cond) => (
+                            (cond.ConditionType == "CompleteCondition")
+                            && objectivesToRemove.Contains(cond.Target!)
+                        )
+                    );
+                }
+            }
+
+            if (conditions.RemoveSurviveAfter!.Value
+                && objectives.Any((obj) => (!ObjectiveIsSingleSurvive(obj)))
+            )
+            {
+                QuestCondition? survive;
+                try
+                {
+                    survive = objectives.SingleOrDefault(ObjectiveIsSingleSurvive);
+                }
+                catch (InvalidOperationException)
+                {
+                    survive = null;
+                }
+
+                if (survive is not null)
+                {
+                    objectives.Remove(survive);
+                }
+            }
         }
 
         if (!config.GlobalConditions.AffectRepeatables)
@@ -948,8 +1043,9 @@ public class QuestTweaksService(
 
         foreach (var quest in questConfig.RepeatableQuests)
         {
-            var questId = quest.Id;
-            if (ShouldModifyCondition(questId, "RemoveFindInRaid"))
+            var conditions = config.GetConditionsWithOverrides(quest.Id);
+
+            if (conditions.RemoveFindInRaid!.Value)
             {
                 foreach (var completion in quest.QuestConfig.CompletionConfig)
                 {
@@ -965,7 +1061,7 @@ public class QuestTweaksService(
 
             foreach (var elim in elims)
             {
-                if (ShouldModifyCondition(questId, "RemoveTarget"))
+                if (conditions.RemoveTarget!.Value)
                 {
                     elim.Targets = [new ProbabilityObject<string, BossInfo> {
                         Key = "Any",
@@ -977,18 +1073,18 @@ public class QuestTweaksService(
                     }];
                 }
 
-                if (ShouldModifyCondition(questId, "RemoveWeapon"))
+                if (conditions.RemoveWeapon!.Value)
                 {
                     elim.WeaponCategoryRequirementChance = 0;
                     elim.WeaponRequirementChance = 0;
                 }
 
-                if (ShouldModifyCondition(questId, "RemoveBodyPart"))
+                if (conditions.RemoveBodyPart!.Value)
                 {
                     elim.BodyPartChance = 0;
                 }
 
-                if (ShouldModifyCondition(questId, "RemoveDistance"))
+                if (conditions.RemoveDistance!.Value)
                 {
                     elim.DistanceProbability = 0;
                 }
@@ -996,111 +1092,63 @@ public class QuestTweaksService(
         }
     }
 
-    private double? GetNewObjectiveValue(MongoId questId, string condition, double? original)
-    {
-        if (original is null)
-        {
-            return null;
-        }
-
-        var absoluteProp = typeof(ConditionsConfig).GetProperty($"{condition}Count")!;
-        var percentProp = typeof(ConditionsConfig).GetProperty($"{condition}Percent")!;
-
-        int? absolute;
-        int? percent;
-
-        ConditionsConfig? questOverride;
-        if (config.QuestOverrides.TryGetValue(questId, out questOverride))
-        {
-            absolute = absoluteProp.GetValue(questOverride) as int?;
-            if (absolute < 0)
-            {
-                return original;
-            }
-            else if (absolute >= 0)
-            {
-                return absolute;
-            }
-
-            percent = percentProp.GetValue(questOverride) as int?;
-            if (percent < 0)
-            {
-                return original;
-            }
-            else if (percent >= 0)
-            {
-                var value = Double.Round((original.Value * percent / 100).Value);
-                if (value == 0)
-                {
-                    return 1;
-                }
-                else
-                {
-                    return value;
-                }
-            }
-        }
-
-        if (IsQuestExempt(questId))
-        {
-            return original;
-        }
-
-        absolute = absoluteProp.GetValue(config.GlobalConditions) as int?;
-        if (absolute >= 0)
-        {
-            return absolute;
-        }
-
-        percent = percentProp.GetValue(config.GlobalConditions) as int?;
-        if (percent >= 0)
-        {
-            var value = Double.Round((original.Value * percent / 100).Value);
-            if (value == 0)
-            {
-                return 1;
-            }
-            else
-            {
-                return value;
-            }
-        }
-
-        return original;
-    }
-
     private bool ShouldModifyCondition(MongoId questId, string condition)
     {
         var prop = typeof(ConditionsConfig).GetProperty(condition)!;
+        return (prop.GetValue(config.GetConditionsWithOverrides(questId)) as bool?) ?? false;
+    }
 
-        ConditionsConfig? questOverride;
-        if (config.QuestOverrides.TryGetValue(questId, out questOverride))
+    private void SetObjectiveValue(QuestCondition objective, ConditionsConfig conditions, string condition,
+        string label, HashSet<MongoId> objectivesToRemove)
+    {
+        var oldValue = objective.Value;
+        objective.Value = config.GetNewObjectiveValue(conditions, condition, objective.Value);
+        if (objective.Value == 0)
         {
-            var overrideValue = prop.GetValue(questOverride) as bool?;
-            if (overrideValue is not null)
-            {
-                return overrideValue.Value;
-            }
+            objectivesToRemove.Add(objective.Id);
+        }
+        else if (objective.Value != oldValue)
+        {
+            AddTag(objective.Id, $"{label} {oldValue}→{objective.Value}");
+        }
+    }
+
+    private void SetPlantTime(QuestCondition objective, int? newTime)
+    {
+        if (newTime is null || newTime < 0)
+        {
+            return;
+        }
+        if (objective.PlantTime != newTime)
+        {
+            AddTag(objective.Id, $"설치 {objective.PlantTime}→{newTime}초");
+        }
+        objective.PlantTime = newTime;
+    }
+
+    private bool ObjectiveTargetItemIsQuestOrSpecial(QuestCondition objective)
+    {
+        TemplateItem? item;
+        if (objective.Target is null)
+        {
+            return false;
+        }
+        if (objective.Target.IsList)
+        {
+            templates.Items.TryGetValue(objective.Target.List![0], out item);
+        }
+        else
+        {
+            templates.Items.TryGetValue(objective.Target.Item!, out item);
         }
 
-        if (IsQuestExempt(questId))
+        if (item is null)
         {
             return false;
         }
 
-        return (prop.GetValue(config.GlobalConditions) as bool?) ?? false;
-    }
-
-    private bool IsQuestExempt(MongoId questId)
-    {
-        if ((config.OnlyQuests.Count > 0) && !config.OnlyQuests.Contains(questId))
-        {
-            return true;
-        }
-        if (config.ExemptQuests.Contains(questId))
-        {
-            return true;
-        }
-        return false;
+        return (item.Properties!.QuestItem == true)
+               || Constants.KeyClasses.Contains(item.Parent)
+               || Constants.HandoverCountItemBlacklist.Contains(item.Id);
     }
 }

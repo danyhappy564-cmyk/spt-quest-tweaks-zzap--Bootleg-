@@ -15,6 +15,30 @@
 
 ## 변경 이력
 
+- 2026-10-09 11:54 (KST) — **원본 모드 최신판(4.9.0, 2026-10-06까지 16개 커밋) 병합.** 포크 버전 4.11.0,
+  F12 플러그인 1.6.0. 기존 기능(완화 표시·F12 실시간 설정·이미 받은 퀘스트에도 적용)은 그대로 유지.
+  원본에서 새로 들어온 것:
+  - **새 옵션 3개** (F12 → `2. 조건 제거`): `한 판 제한 해제`(`removeInOneRaid` — "한 번의 레이드에서" 조건 제거),
+    `환승(트랜짓) 목표 제거`(`removeTransit` — 트랜짓 이동 목표 삭제, 그 퀘스트는 한 판 제한도 같이 풀림),
+    `마지막 생존 탈출 목표 제거`(`removeSurviveAfter` — 다른 목표 뒤에 붙은 "생존 후 탈출" 하나만 삭제).
+  - **설치 목표 개수·시간** (F12 → `3. 수량`): 아이템 두고 오기(`plantItem…`), 마커/카메라 설치(`placeProtect…`)의
+    개수 비율/고정값과 설치 시간(초).
+  - **고정값 0 = 그 목표 삭제.** 예전엔 개수만 0이 됐는데, 이제 목표 자체가 사라진다. 조건을 다 지워서
+    할 게 없어진 목표도 "0개로 자동 완료" 대신 삭제된다.
+  - `config.json`이 없으면 기본값으로 새로 만들고, 내용이 잘못돼도 서버가 죽지 않고 콘솔에 오류만 남긴다.
+    `"debug": true`면 모드 폴더에 수정 전/후 퀘스트 목록(`quests_before.json`/`quests_after.json`)을 남긴다.
+  - zip 구조 변경: 모드 폴더에 원본 영문 설명서 `README.md` + 이 한국어 설명서 `README_KR.md`.
+  
+  포크 쪽에서 같이 고친 것:
+  - 새 기능에도 완화 표시를 붙였다: `한 판 제한 없음`, `설치 20→5초`, 설치 개수 `수량 4→2`. (삭제된 목표는 화면에서
+    사라지므로 표시 없음.)
+  - **F12 저장 시 새 옵션이 지워지던 문제 예방**: F12 플러그인이 모르는 항목(예: 구버전 플러그인 + 새 옵션)은
+    서버가 기존 값을 유지하도록 했다. 원본 그대로 합쳤다면 F12에서 아무거나 바꿀 때 `config.json`의
+    `removeTransit` 등이 꺼졌을 것.
+  - 다른 모드가 추가한 퀘스트에 일부 데이터가 비어 있어도 새 기능이 오류로 멈추지 않게 함(이 모드는 가장 마지막에 돌기 때문).
+  - 검증: 서버·F12 플러그인 `dotnet build` 성공(오류 0). 실제 SPT 퀘스트 DB(1606개 목표)로 테스트 21개 통과
+    (한 판 제한 169개 해제, 트랜짓 목표 20개·생존 탈출 목표 60개 삭제, 설치 시간, 사살 0 → 목표 삭제, 전부 끄면 원상복구,
+    F12 저장 시 새 옵션 유지). **인게임 미검증.**
 - 2026-09-24 20:54 (KST) — **"이미 받은 퀘스트에도 적용" 옵션 추가** (F12 → `4. 편의 기능`, `config.json`의
   `QualityOfLife.applyToExistingProgress`, **기본 꺼짐**). 일부 완화는 값이 프로필에 복사돼 저장되기 때문에
   켜기 전에 받은 것에는 안 먹었다. 켜면 서버가 프로필의 그 복사본을 직접 고친다:
@@ -71,7 +95,7 @@ zip을 SPT 폴더(`E:\SPT 4.1`)에 그대로 풀면 된다.
 
 | 파일 | 위치 | 역할 |
 |---|---|---|
-| `sgtlaggyQuestTweaks.dll`, `config.json` | `SPT_Runtime\user\mods\sgtlaggyQuestTweaks\` | 서버 모드 (퀘스트 완화 본체) |
+| `sgtlaggyQuestTweaks.dll`, `config.json`, `README.md`(원본 영문), `README_KR.md` | `SPT_Runtime\user\mods\sgtlaggyQuestTweaks\` | 서버 모드 (퀘스트 완화 본체) |
 | `QuestTweaksLive.dll` | `BepInEx\plugins\` | F12 설정 메뉴 (선택 — 없어도 서버 모드는 `config.json`만으로 동작) |
 
 ## 새 기능 1: 완화 표시
@@ -91,8 +115,9 @@ zip을 SPT 폴더(`E:\SPT 4.1`)에 그대로 풀면 된다.
 | 맵 무관 / 구역 무관 / 구역→맵 전체 | 위치 제한이 풀리거나 넓어짐 |
 | 착용 장비 무관 / 적 장비 무관 / 본인 상태 무관 / 적 상태 무관 | 장비·상태 조건이 풀림 |
 | FIR 불필요 | 납품 아이템의 인레이드 획득 조건이 풀림 |
-| 목표 5→3 / 수량 10→5 | 사살 수 / 납품 수가 바뀜 |
-| 자동 완료 | 조건이 다 지워져서 목표가 0으로 바뀜 |
+| 목표 5→3 / 수량 10→5 | 사살 수 / 납품·설치 수가 바뀜 |
+| 설치 20→5초 | 아이템·마커 설치 시간이 바뀜 |
+| 한 판 제한 없음 | "한 번의 레이드에서" 조건이 풀림 |
 | TRG M10 허용 | 타르코프 슈터에 M10 추가 |
 
 ## 새 기능 2: F12 실시간 설정
@@ -159,11 +184,17 @@ zip을 SPT 폴더(`E:\SPT 4.1`)에 그대로 풀면 된다.
 - 맵 — `removeMap`
 - 구역 — `removeZone` (맵은 유지하고 구역만 지우면 구역이 맵 전체로 넓어진다)
 - 🔃 FIR(인레이드 획득) — `removeFindInRaid`
+- 한 판 제한("한 번의 레이드에서") — `removeInOneRaid`
+- 트랜짓 목표 삭제 — `removeTransit` (그 퀘스트의 한 판 제한도 같이 풀림)
+- 마지막 "생존 후 탈출" 목표 삭제 — `removeSurviveAfter` (다른 목표가 있는 퀘스트만)
 
-### 사살 수 / 납품 수 (`GlobalConditions`)
+### 사살 수 / 납품 수 / 설치 수 (`GlobalConditions`)
 
-- `eliminationCount` / `eliminationPercent`, `handoverItemCount` / `handoverItemPercent`
+- `eliminationCount` / `eliminationPercent`, `handoverItemCount` / `handoverItemPercent`,
+  `plantItemCount` / `plantItemPercent` / `plantItemTime`(아이템 두고 오기),
+  `placeProtectCount` / `placeProtectPercent` / `placeProtectTime`(마커·카메라 설치)
 - 음수(`-1`)면 변경 안 함. 고정값(`Count`)이 비율(`Percent`)보다 우선. 비율 적용 결과가 0이면 1.
+  **고정값 0이면 그 목표 자체를 삭제.** `…Time`은 설치에 걸리는 초.
 - 퀘스트 아이템(골동 회중시계 등)과 열쇠/키카드에는 적용 안 됨.
 
 ### 퀘스트별 설정
@@ -173,6 +204,7 @@ zip을 SPT 폴더(`E:\SPT 4.1`)에 그대로 풀면 된다.
   상관없이 항상 적용된다.
 - `onlyQuests` — 이 목록의 퀘스트만 수정.
 - `exemptQuests` — 이 목록의 퀘스트는 건너뜀.
+- `debug` — `true`면 모드 폴더에 `quests_before.json`/`quests_after.json`을 남긴다.
 - 퀘스트 ID는 [Tarkynator](https://tarkynator.com/quests?scope=global)에서 찾을 수 있다.
   반복 퀘스트 ID: PMC 일일 `615ffc701c97c768137e719b`, 주간 `618035d38012292db3081bf0`,
   스캐브 일일 `62825ef60e88d037dc1eb426`.

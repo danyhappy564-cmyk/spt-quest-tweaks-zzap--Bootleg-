@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -16,7 +16,7 @@ namespace QuestTweaksLive
     /// The server's config.json is the source of truth: on start the plugin pulls it, and every
     /// change made in F12 is pushed back, saved to config.json and re-applied without a restart.
     /// </summary>
-    [BepInPlugin(Guid, "Quest Tweaks Live (F12)", "1.5.0")]
+    [BepInPlugin(Guid, "Quest Tweaks Live (F12)", "1.6.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "com.zzap.questtweaks.live";
@@ -427,17 +427,34 @@ namespace QuestTweaksLive
             Bool(remove, "본인 상태 제한 해제", "GlobalConditions", "removeSelfHealthEffect", false, "탈수/뇌진탕 등 본인 상태 조건을 없앤다.", order--);
             Bool(remove, "적 상태 제한 해제", "GlobalConditions", "removeEnemyHealthEffect", false, "적의 상태 조건을 없앤다.", order--);
             Bool(remove, "FIR 조건 해제", "GlobalConditions", "removeFindInRaid", false, "납품 아이템의 인레이드 획득(FIR) 조건을 없앤다.", order--);
+            Bool(remove, "한 판 제한 해제", "GlobalConditions", "removeInOneRaid", false, "\"한 번의 레이드에서\" 조건을 없앤다. 여러 판에 나눠서 채워도 된다.", order--);
+            Bool(remove, "환승(트랜짓) 목표 제거", "GlobalConditions", "removeTransit", false,
+                "트랜짓으로 맵을 이동해야 하는 목표를 없앤다. 해당 퀘스트는 \"한 판 제한\"도 같이 풀린다.", order--);
+            Bool(remove, "마지막 생존 탈출 목표 제거", "GlobalConditions", "removeSurviveAfter", false,
+                "다른 목표를 다 한 뒤 \"생존 후 탈출\" 하나만 남는 목표를 없앤다.", order--);
             Bool(remove, "반복 퀘스트에도 적용", "GlobalConditions", "affectRepeatables", true, "일일/주간 퀘스트에도 대상/무기/부위/거리/FIR 해제를 적용한다. 이미 받은 반복 퀘스트는 바뀌지 않는다.", order--);
 
             order = 100;
             Int(counts, "사살 수 비율(%)", "GlobalConditions", "eliminationPercent", -1, -1, 200,
                 "-1 = 변경 안 함. 예) 60이면 5명 → 3명 (최소 1).", order--);
             Int(counts, "사살 수 고정값", "GlobalConditions", "eliminationCount", -1, -1, 999,
-                "-1 = 변경 안 함. 0 이상이면 비율보다 우선 적용.", order--);
+                "-1 = 변경 안 함. 0 이상이면 비율보다 우선 적용, 0이면 그 목표를 없앤다.", order--);
             Int(counts, "납품 수 비율(%)", "GlobalConditions", "handoverItemPercent", -1, -1, 200,
                 "-1 = 변경 안 함. 퀘스트 아이템/열쇠에는 적용되지 않는다.", order--);
             Int(counts, "납품 수 고정값", "GlobalConditions", "handoverItemCount", -1, -1, 999,
-                "-1 = 변경 안 함. 0 이상이면 비율보다 우선 적용.", order--);
+                "-1 = 변경 안 함. 0 이상이면 비율보다 우선 적용, 0이면 그 목표를 없앤다.", order--);
+            Int(counts, "설치 수 비율(%)", "GlobalConditions", "plantItemPercent", -1, -1, 200,
+                "-1 = 변경 안 함. 아이템을 특정 위치에 두고 오는 목표의 개수.", order--);
+            Int(counts, "설치 수 고정값", "GlobalConditions", "plantItemCount", -1, -1, 999,
+                "-1 = 변경 안 함. 0이면 그 목표를 없앤다.", order--);
+            Int(counts, "설치 시간(초)", "GlobalConditions", "plantItemTime", -1, -1, 300,
+                "-1 = 변경 안 함. 아이템을 두는 데 걸리는 시간.", order--);
+            Int(counts, "마커/카메라 설치 수 비율(%)", "GlobalConditions", "placeProtectPercent", -1, -1, 200,
+                "-1 = 변경 안 함. MS2000 마커·WI-FI 카메라 등을 설치하는 목표의 개수.", order--);
+            Int(counts, "마커/카메라 설치 수 고정값", "GlobalConditions", "placeProtectCount", -1, -1, 999,
+                "-1 = 변경 안 함. 0이면 그 목표를 없앤다.", order--);
+            Int(counts, "마커/카메라 설치 시간(초)", "GlobalConditions", "placeProtectTime", -1, -1, 300,
+                "-1 = 변경 안 함. 마커/카메라를 설치하는 데 걸리는 시간.", order--);
 
             order = 100;
             Bool(qol, "숨겨진 목표 전부 공개", "QualityOfLife", "revealAllQuestObjectives", false,

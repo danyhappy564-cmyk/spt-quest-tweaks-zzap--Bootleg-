@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <Version>4.10.0</Version>
+    <Version>4.11.0</Version>
     <Company>sgtlaggy</Company>
     <Copyright>Copyright © sgtlaggy 2026</Copyright>
   </PropertyGroup>
@@ -20,10 +20,19 @@
   </PropertyGroup>
 
   <Target Name="BuildDist" AfterTargets="AfterBuild">
+    <ItemGroup>
+      <OutputDLL Include="$(TargetPath)"/>
+      <Resources Include="Resources\**\*.*"/>
+    </ItemGroup>
+
     <RemoveDir Directories="$(DistDir)"/>
     <Copy
-        SourceFiles="$(TargetPath);config.json;README.md"
-        DestinationFolder="$(ModDir)"/>
+        SourceFiles="@(OutputDLL);@(Resources)"
+        DestinationFolder="$(ModDir)\%(RecursiveDir)"/>
+    <!-- Korean README of this fork (Resources/README.md is the original author's) -->
+    <Copy
+        SourceFiles="README.md"
+        DestinationFiles="$(ModDir)\README_KR.md"/>
   </Target>
   <!-- F12 live-settings client plugin: build client/ first (see README) and it is packed alongside -->
   <Target Name="CopyClientPlugin" AfterTargets="BuildDist" Condition="Exists('client\bin\$(Configuration)\QuestTweaksLive.dll')">

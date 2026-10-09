@@ -1,0 +1,47 @@
+{
+  "QualityOfLife": {
+    "revealAllQuestObjectives": false,
+    "revealUnknownRewards": false,
+    "removeTimeGates": false,
+    "showRelaxedTag": true,
+    "applyToExistingProgress": false
+  },
+  "GlobalConditions": {
+    "affectRepeatables": true,
+    "removeTarget": false,
+    "removeWeapon": false,
+    "removeWeaponMods": false,
+    "removeSelfGear": false,
+    "removeEnemyGear": false,
+    "removeSelfHealthEffect": false,
+    "removeEnemyHealthEffect": false,
+    "removeBodyPart": false,
+    "removeDistance": false,
+    "removeTime": false,
+    "removeMap": false,
+    "removeZone": false,
+    "removeFindInRaid": false,
+    "removeInOneRaid": false,
+    "removeTransit": false,
+    "removeSurviveAfter": false,
+    "handoverItemCount": -1,
+    "handoverItemPercent": -1,
+    "eliminationCount": -1,
+    "eliminationPercent": -1,
+    "plantItemCount": -1,
+    "plantItemPercent": -1,
+    "plantItemTime": -1,
+    "placeProtectCount": -1,
+    "placeProtectPercent": -1,
+    "placeProtectTime": -1
+  },
+  "SpecialCases": {
+    "lightkeeperOnlyRequireLevel": 0,
+    "tarkovShooterM10": false,
+    "collectorPrerequisiteBackport": false
+  },
+  "exemptQuests": [],
+  "onlyQuests": [],
+  "questOverrides": {},
+  "debug": false
+}

@@ -1,3 +1,4 @@
+﻿using System.Reflection;
 using System.Text.Json.Serialization;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
@@ -94,7 +95,18 @@ public class LiveSettingsService(
             }
             if (request.GlobalConditions is not null)
             {
+                // keys the client did not send (older F12 plugin) keep their current value
+                var props = typeof(ConditionsConfig).GetProperties()
+                    .Where(prop => prop.GetCustomAttribute<JsonPropertyNameAttribute>() is not null);
+                foreach (var prop in props)
+                {
+                    if (prop.GetValue(request.GlobalConditions) is null)
+                    {
+                        prop.SetValue(request.GlobalConditions, prop.GetValue(config.GlobalConditions));
+                    }
+                }
                 config.GlobalConditions = request.GlobalConditions;
+                config.FillDefaultGlobalConditions();
             }
             if (request.SpecialCases is not null)
             {

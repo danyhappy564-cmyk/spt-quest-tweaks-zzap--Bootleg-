@@ -15,6 +15,8 @@
 
 ## 변경 이력
 
+- 2026-10-10 21:59 (KST) — **v3 릴리즈 노트 작성** (`changelog/RELEASE_NOTES_v3.md` GitHub용, `changelog/RELEASE_NOTES_v3_arca.txt`
+  아카라이브용). 코드 변경 없음. 업데이트 시 `config.json`이 덮어써지는 점을 안내에 넣었다.
 - 2026-10-09 16:01 (KST) — **서버 모드만 빌드해도 F12 플러그인이 같이 빌드되게 함.** 전에는 `client` 폴더를 따로 먼저
   빌드해야 했고, 솔루션(.sln)이나 서버 프로젝트만 빌드하면 zip에 `QuestTweaksLive.dll`이 빠졌다. 이제 `E:\SPT 4.1`에
   게임 파일이 있으면 자동으로 같이 빌드해서 zip에 넣는다. 게임 폴더가 다르면 `-p:SptRoot="게임 폴더"`, 못 찾으면

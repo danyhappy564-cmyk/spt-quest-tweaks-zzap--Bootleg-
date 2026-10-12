@@ -1,9 +1,9 @@
 ### ⚠️ IMPORTANT NOTICE / DISCLAIMER
 
-**Original Author:** sgtlaggy
-**Original Repository:** spt-quest-tweaks
-**Original Link:** https://github.com/sgtlaggy/spt-quest-tweaks
-**License:** MIT (원본 저장소의 `LICENSE` 파일 그대로 유지)
+- **Original Author:** sgtlaggy
+- **Original Repository:** spt-quest-tweaks
+- **Original Link:** https://github.com/sgtlaggy/spt-quest-tweaks
+- **License:** MIT (원본 저장소의 `LICENSE` 파일 그대로 유지)
 
 1. **Reflection & Take-Downs:** I deeply reflect on the ECOT incident. As an AI-assisted "vibe coder," I will immediately delete files if the original authors ask.
 2. **No Re-Distribution:** These ported builds are unverified, temporary fixes. Please do NOT re-upload or share them anywhere else.
@@ -15,6 +15,7 @@
 
 ## 변경 이력
 
+- 2026-10-13 04:38 — README 맨 위 원작자 표기를 한 줄씩 나눠 보기 쉽게 정리 (내용 변화 없음)
 - 2026-10-10 21:59 (KST) — **v3 릴리즈 노트 작성** (`changelog/RELEASE_NOTES_v3.md` GitHub용, `changelog/RELEASE_NOTES_v3_arca.txt`
   아카라이브용). 코드 변경 없음. 업데이트 시 `config.json`이 덮어써지는 점을 안내에 넣었다.
 - 2026-10-09 16:01 (KST) — **서버 모드만 빌드해도 F12 플러그인이 같이 빌드되게 함.** 전에는 `client` 폴더를 따로 먼저
